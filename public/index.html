@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DS TAMIL GAMING — VORTEX CLASH 2026</title>
+  
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233ecf8e'><polygon points='12 2 2 7 12 12 22 7 12 2'/><polygon points='2 17 12 22 22 17 12 12'/><polygon points='2 12 12 17 22 12 12 7'/></svg>" type="image/svg+xml">
+
+  <!-- Clean Inter & JetBrains Mono Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          },
+          colors: {
+            supabase: {
+              DEFAULT: '#3ecf8e',
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              200: '#bbf7d0',
+              300: '#86efac',
+              400: '#4ade80',
+              500: '#3ecf8e',
+              600: '#24b47e',
+              700: '#15803d',
+              800: '#166534',
+              900: '#14532d',
+              dark: '#121212',
+              darker: '#0c0c0c',
+              card: '#181818',
+              surface: '#1e1e1e',
+              border: '#2a2a2a'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <!-- React 18 & ReactDOM & Babel Standalone -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="bg-[#0c0c0c] text-neutral-200 font-sans antialiased selection:bg-supabase selection:text-black min-h-screen">
+  <div id="root"></div>
+
+  <!-- Main Application Script -->
+  <script type="text/babel" src="/js/app.js"></script>
+</body>
+</html>
