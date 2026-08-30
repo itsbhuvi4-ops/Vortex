@@ -1,7 +1,7 @@
-﻿{
+{
   "name": "vortex-clash-2026",
   "version": "1.0.0",
-  "description": "DS TAMIL GAMING — VORTEX CLASH 2026 Interactive Esports Tournament Website",
+  "description": "DS TAMIL GAMING - VORTEX CLASH 2026 Interactive Esports Tournament Website",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
