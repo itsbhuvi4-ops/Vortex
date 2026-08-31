@@ -11,15 +11,36 @@ const XLSX = require('xlsx');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Determine environment
+const IS_VERCEL = !!(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NOW_REGION);
+
+if (IS_VERCEL || process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
+// Request timing & logging middleware
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    const startTime = Date.now();
+    res.on('finish', () => {
+      const duration = Date.now() - startTime;
+      const cleanPath = req.originalUrl || req.url;
+      if (duration > 2000) {
+        console.warn(`[SLOW API] ${req.method} ${cleanPath} ${res.statusCode} - ${duration}ms`);
+      } else {
+        console.log(`[API] ${req.method} ${cleanPath} ${res.statusCode} - ${duration}ms`);
+      }
+    });
+  }
+  next();
+});
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Ensure directories exist
-const IS_VERCEL = !!process.env.VERCEL;
+// Directories
 const DATA_DIR = IS_VERCEL
   ? path.join('/tmp', 'vortex-data')
   : path.join(__dirname, 'data');
@@ -28,31 +49,76 @@ const UPLOADS_DIR = IS_VERCEL
   : path.join(__dirname, 'uploads');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-
-// Copy uploaded poster image
-const userUploadedPoster = 'C:\\Users\\Admin\\.gemini\\antigravity-ide\\brain\\d60af17a-0e0c-46a0-af19-89806fc1c8a9\\.user_uploaded\\media_1788011801268.jpg';
-const targetPublicPoster = path.join(PUBLIC_DIR, 'hero-poster.jpg');
-const targetUploadPoster = path.join(UPLOADS_DIR, 'hero-poster.jpg');
 try {
-  if (fs.existsSync(userUploadedPoster)) {
-    fs.copyFileSync(userUploadedPoster, targetPublicPoster);
-    fs.copyFileSync(userUploadedPoster, targetUploadPoster);
-  }
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 } catch (e) {
-  console.error("Poster copy error:", e);
+  console.warn("Directory creation warning:", e.message);
 }
 
+// Static File Serving
+app.use(express.static(PUBLIC_DIR));
+app.use('/uploads', express.static(UPLOADS_DIR));
+
+// Explicit homepage route for instant static serving
+app.get('/', (req, res) => {
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+});
+
+// DB file paths
 const DB_FILE = path.join(DATA_DIR, 'database.json');
 const SQL_DB_FILE = path.join(DATA_DIR, 'vortex.db');
-const sqliteDb = new sqlite3.Database(SQL_DB_FILE);
+
+// If on Vercel and local pre-existing database files exist, copy them to /tmp on initial cold start
+if (IS_VERCEL) {
+  const localDb = path.join(__dirname, 'data', 'vortex.db');
+  const localJson = path.join(__dirname, 'data', 'database.json');
+  try {
+    if (!fs.existsSync(SQL_DB_FILE) && fs.existsSync(localDb)) {
+      fs.copyFileSync(localDb, SQL_DB_FILE);
+    }
+    if (!fs.existsSync(DB_FILE) && fs.existsSync(localJson)) {
+      fs.copyFileSync(localJson, DB_FILE);
+    }
+  } catch (err) {
+    console.warn("Vercel cold start db copy warning:", err.message);
+  }
+}
+
+// SQLite database setup with graceful connection handling
+let sqliteDbReady = false;
+let sqliteDbError = null;
+
+let sqliteDb = null;
+try {
+  sqliteDb = new sqlite3.Database(SQL_DB_FILE, (err) => {
+    if (err) {
+      console.error('SQLite connection error:', err.message);
+      sqliteDbError = err;
+    } else {
+      sqliteDbReady = true;
+    }
+  });
+
+  sqliteDb.on('error', (err) => {
+    console.error('SQLite runtime error:', err.message);
+    sqliteDbError = err;
+  });
+} catch (err) {
+  console.error('Failed to initialize SQLite database instance:', err.message);
+  sqliteDbError = err;
+}
 
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'vortex-clash-session-secret',
+  secret: process.env.SESSION_SECRET || 'vortex-clash-session-secret-2026',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false, httpOnly: true, sameSite: 'lax', maxAge: 1000 * 60 * 60 * 12 }
+  cookie: {
+    secure: false,
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 1000 * 60 * 60 * 24
+  }
 }));
 
 const upload = multer({
@@ -75,6 +141,9 @@ const upload = multer({
 
 function runDb(sql, params = []) {
   return new Promise((resolve, reject) => {
+    if (!sqliteDb || (sqliteDbError && !sqliteDbReady)) {
+      return reject(sqliteDbError || new Error('Database not connected'));
+    }
     sqliteDb.run(sql, params, function (err) {
       if (err) return reject(err);
       resolve({ id: this.lastID, changes: this.changes });
@@ -84,6 +153,9 @@ function runDb(sql, params = []) {
 
 function getDbRow(sql, params = []) {
   return new Promise((resolve, reject) => {
+    if (!sqliteDb || (sqliteDbError && !sqliteDbReady)) {
+      return reject(sqliteDbError || new Error('Database not connected'));
+    }
     sqliteDb.get(sql, params, (err, row) => {
       if (err) return reject(err);
       resolve(row || null);
@@ -93,6 +165,9 @@ function getDbRow(sql, params = []) {
 
 function getDbRows(sql, params = []) {
   return new Promise((resolve, reject) => {
+    if (!sqliteDb || (sqliteDbError && !sqliteDbReady)) {
+      return reject(sqliteDbError || new Error('Database not connected'));
+    }
     sqliteDb.all(sql, params, (err, rows) => {
       if (err) return reject(err);
       resolve(rows || []);
@@ -117,60 +192,88 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-async function initializeDatabase() {
-  sqliteDb.serialize(() => {
-    sqliteDb.run(`CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      passwordHash TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'user',
-      createdAt TEXT NOT NULL
-    )`);
-
-    sqliteDb.run(`CREATE TABLE IF NOT EXISTS teams (
-      id TEXT PRIMARY KEY,
-      userId TEXT NOT NULL UNIQUE,
-      teamName TEXT NOT NULL,
-      teamLogo TEXT,
-      teamLeader TEXT NOT NULL,
-      phoneNumber TEXT NOT NULL,
-      whatsappNumber TEXT NOT NULL,
-      player1 TEXT NOT NULL,
-      player2 TEXT NOT NULL,
-      player3 TEXT NOT NULL,
-      player4 TEXT NOT NULL,
-      substitute TEXT,
-      paymentProof TEXT NOT NULL,
-      joinedWhatsapp INTEGER DEFAULT 0,
-      joinedDiscord INTEGER DEFAULT 0,
-      registrationNumber TEXT,
-      createdAt TEXT NOT NULL
-    )`);
-
-    sqliteDb.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_teams_userId ON teams(userId)`);
-    sqliteDb.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)`);
+// Health check endpoint (TASK 2)
+app.get('/api/health', (req, res) => {
+  let dbStatus = 'connected';
+  if (!sqliteDbReady || sqliteDbError) {
+    dbStatus = sqliteDbError ? `error: ${sqliteDbError.message}` : 'connecting';
+  }
+  res.json({
+    success: true,
+    status: 'ok',
+    database: dbStatus,
+    timestamp: new Date().toISOString()
   });
+});
 
-  const existingAdmin = await getDbRow('SELECT * FROM users WHERE role = ?', ['admin']);
-  if (!existingAdmin) {
-    const adminId = `user-${Date.now()}`;
-    const hash = await bcrypt.hash('1234', 10);
-    await runDb('INSERT INTO users (id, name, email, passwordHash, role, createdAt) VALUES (?, ?, ?, ?, ?, ?)', [adminId, 'Bhuvi', 'bhuvi@vortex.local', hash, 'admin', new Date().toISOString()]);
-  } else {
-    const adminHash = await bcrypt.hash('1234', 10);
-    if (existingAdmin.name !== 'Bhuvi' || existingAdmin.email !== 'bhuvi@vortex.local') {
-      await runDb('UPDATE users SET name = ?, email = ?, passwordHash = ? WHERE role = ?', ['Bhuvi', 'bhuvi@vortex.local', adminHash, 'admin']);
+async function initializeDatabase() {
+  if (!sqliteDb) return;
+  try {
+    await new Promise((resolve) => {
+      sqliteDb.serialize(() => {
+        sqliteDb.run(`CREATE TABLE IF NOT EXISTS users (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          email TEXT NOT NULL UNIQUE,
+          passwordHash TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'user',
+          createdAt TEXT NOT NULL
+        )`, (err) => { if (err) console.error("Table users creation error:", err.message); });
+
+        sqliteDb.run(`CREATE TABLE IF NOT EXISTS teams (
+          id TEXT PRIMARY KEY,
+          userId TEXT NOT NULL UNIQUE,
+          teamName TEXT NOT NULL,
+          teamLogo TEXT,
+          teamLeader TEXT NOT NULL,
+          phoneNumber TEXT NOT NULL,
+          whatsappNumber TEXT NOT NULL,
+          player1 TEXT NOT NULL,
+          player2 TEXT NOT NULL,
+          player3 TEXT NOT NULL,
+          player4 TEXT NOT NULL,
+          substitute TEXT,
+          paymentProof TEXT NOT NULL,
+          joinedWhatsapp INTEGER DEFAULT 0,
+          joinedDiscord INTEGER DEFAULT 0,
+          registrationNumber TEXT,
+          createdAt TEXT NOT NULL
+        )`, (err) => { if (err) console.error("Table teams creation error:", err.message); });
+
+        sqliteDb.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_teams_userId ON teams(userId)`, () => {});
+        sqliteDb.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)`, () => {
+          sqliteDbReady = true;
+          resolve();
+        });
+      });
+    });
+
+    const existingAdmin = await getDbRow('SELECT * FROM users WHERE role = ?', ['admin']);
+    if (!existingAdmin) {
+      const adminId = `user-${Date.now()}`;
+      const hash = await bcrypt.hash('1234', 10);
+      await runDb('INSERT INTO users (id, name, email, passwordHash, role, createdAt) VALUES (?, ?, ?, ?, ?, ?)', [
+        adminId, 'Bhuvi', 'bhuvi@vortex.local', hash, 'admin', new Date().toISOString()
+      ]);
     } else {
-      const matches = await bcrypt.compare('1234', existingAdmin.passwordHash);
-      if (!matches) {
-        await runDb('UPDATE users SET passwordHash = ? WHERE role = ?', [adminHash, 'admin']);
+      const adminHash = await bcrypt.hash('1234', 10);
+      if (existingAdmin.name !== 'Bhuvi' || existingAdmin.email !== 'bhuvi@vortex.local') {
+        await runDb('UPDATE users SET name = ?, email = ?, passwordHash = ? WHERE role = ?', [
+          'Bhuvi', 'bhuvi@vortex.local', adminHash, 'admin'
+        ]);
+      } else {
+        const matches = await bcrypt.compare('1234', existingAdmin.passwordHash);
+        if (!matches) {
+          await runDb('UPDATE users SET passwordHash = ? WHERE role = ?', [adminHash, 'admin']);
+        }
       }
     }
+  } catch (err) {
+    console.error('Database initialization error:', err.message || err);
   }
 }
 
-initializeDatabase().catch(err => console.error('DB init error:', err));
+initializeDatabase().catch(err => console.error('DB async init catch:', err.message || err));
 
 // Initial default seed state
 const defaultState = {

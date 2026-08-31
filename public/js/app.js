@@ -1,5 +1,81 @@
 const { useState, useEffect, useRef, useMemo } = React;
 
+// Fallback Defaults for Instant & Resilient Rendering
+const DEFAULT_SETTINGS = {
+  tournamentName: "DS TAMIL GAMING — VORTEX CLASH 2026",
+  conductedBy: "DS TAMIL GAMING",
+  posterUrl: "/hero-poster.jpg",
+  description: "Welcome to the ultimate esports showdown! DS TAMIL GAMING presents VORTEX CLASH 2026 — the pinnacle of competitive battleground gaming. Assemble your squad, dominate the arena, and claim the championship glory.",
+  registrationFee: "₹100",
+  maxTeams: 30,
+  registrationOpen: true,
+  paymentQrUrl: "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=upi://pay?pa=dstamilgaming@upi&pn=DSTamilGaming&am=100&cu=INR&tn=VORTEX_CLASH_2026",
+  paymentInstructions: "1. Scan the QR code using GPay, PhonePe, or Paytm.\n2. Pay the registration fee of ₹100.\n3. Take a clear screenshot of the successful transaction.\n4. Upload the payment screenshot in the registration form below.",
+  whatsappLink: "https://chat.whatsapp.com/invite/VortexClash2026",
+  discordLink: "https://discord.gg/vortexclash2026",
+  importantDates: "Registration Closes: 05 September 2026 | Bracket Announcement: 05 September 2026, 9:00 PM | Tournament Kickoff: 06 September 2026, 6:00 PM",
+  instructions: "All team leaders must join the official WhatsApp and Discord communities. Teams must be ready in the custom room 15 minutes prior to match schedule. Fair play and sportsmanship are strictly enforced."
+};
+
+const DEFAULT_SPONSORS = [
+  {
+    id: "sp-1",
+    name: "TITAN GEAR ESPORTS",
+    role: "Title Sponsor & Official Hardware Partner",
+    description: "Equipping champions with ultra-low latency mechanical keyboards, high-DPI optical mice, and pro headsets.",
+    logoUrl: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=300&q=80",
+    profileLink: "#",
+    orderIndex: 1
+  },
+  {
+    id: "sp-2",
+    name: "VORTEX ENERGY",
+    role: "Official Energy Drink Partner",
+    description: "Maximum focus, zero crash. Formulated specifically for competitive esports athletes and long tournament grinds.",
+    logoUrl: "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=300&q=80",
+    profileLink: "#",
+    orderIndex: 2
+  },
+  {
+    id: "sp-3",
+    name: "CYBER NETWORKS",
+    role: "Official Streaming & Network Partner",
+    description: "Providing enterprise ultra-fast fiber connectivity and 4K low-latency streaming infrastructure.",
+    logoUrl: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=300&q=80",
+    profileLink: "#",
+    orderIndex: 3
+  }
+];
+
+const DEFAULT_RULES = [
+  { id: "r-1", category: "Tournament Rules", title: "No Roof", content: "NO ROOF", orderIndex: 1 },
+  { id: "r-2", category: "Tournament Rules", title: "No PC", content: "NO PC", orderIndex: 2 },
+  { id: "r-3", category: "Tournament Rules", title: "No Panel", content: "NO PANEL", orderIndex: 3 },
+  { id: "r-4", category: "Tournament Rules", title: "No Wall Break", content: "NO WALL BREAK", orderIndex: 4 },
+  { id: "r-5", category: "Tournament Rules", title: "No Team Change", content: "NO TEAM CHANGE", orderIndex: 5 },
+  { id: "r-6", category: "Tournament Rules", title: "Only Face to Face", content: "ONLY FACE TO FACE", orderIndex: 6 },
+  { id: "r-7", category: "Tournament Rules", title: "No Zone Break", content: "NO ZONE BREAK", orderIndex: 7 }
+];
+
+// Reusable Fetch Helper with Timeout & AbortController (TASK 1)
+async function fetchWithTimeout(url, options = {}, timeout = 8000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      console.warn(`[Timeout] Request to ${url} aborted after ${timeout}ms`);
+    } else {
+      console.warn(`[Fetch Error] Request to ${url} failed:`, err.message || err);
+    }
+    throw err;
+  }
+}
+
 // Preset Clean Avatars
 const PRESET_CRESTS = [
   { id: '1', name: 'Viper', url: 'https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&w=200&q=80' },
@@ -27,10 +103,10 @@ function calculateTimeLeft(targetIso) {
 // =========================================================================
 function App() {
   const [activeTab, setActiveTab] = useState('home');
-  const [settings, setSettings] = useState(null);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [teams, setTeams] = useState([]);
-  const [sponsors, setSponsors] = useState([]);
-  const [rules, setRules] = useState([]);
+  const [sponsors, setSponsors] = useState(DEFAULT_SPONSORS);
+  const [rules, setRules] = useState(DEFAULT_RULES);
   const [bracketData, setBracketData] = useState(null);
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
   const [authUser, setAuthUser] = useState(null);
@@ -54,81 +130,118 @@ function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  // Parallelized API Requests with Timeout and Fallbacks (TASK 9)
   const fetchData = async () => {
     try {
-      const [sRes, tRes, spRes, rRes, bRes] = await Promise.all([
-        fetch('/api/settings').then(r => r.json()),
-        fetch('/api/teams').then(r => r.json()),
-        fetch('/api/sponsors').then(r => r.json()),
-        fetch('/api/rules').then(r => r.json()),
-        fetch('/api/bracket').then(r => r.json())
+      const results = await Promise.allSettled([
+        fetchWithTimeout('/api/settings', {}, 8000).then(r => r.ok ? r.json() : null),
+        fetchWithTimeout('/api/teams', {}, 8000).then(r => r.ok ? r.json() : null),
+        fetchWithTimeout('/api/sponsors', {}, 8000).then(r => r.ok ? r.json() : null),
+        fetchWithTimeout('/api/rules', {}, 8000).then(r => r.ok ? r.json() : null),
+        fetchWithTimeout('/api/bracket', {}, 8000).then(r => r.ok ? r.json() : null)
       ]);
 
-      if (sRes.success) setSettings(sRes.settings);
-      if (tRes.success) setTeams(tRes.teams);
-      if (spRes.success) setSponsors(spRes.sponsors);
-      if (rRes.success) setRules(rRes.rules);
-      if (bRes.success) setBracketData(bRes);
+      const [sRes, tRes, spRes, rRes, bRes] = results;
+
+      if (sRes.status === 'fulfilled' && sRes.value?.success && sRes.value?.settings) {
+        setSettings(sRes.value.settings);
+      }
+      if (tRes.status === 'fulfilled' && tRes.value?.success && tRes.value?.teams) {
+        setTeams(tRes.value.teams);
+      }
+      if (spRes.status === 'fulfilled' && spRes.value?.success && spRes.value?.sponsors) {
+        setSponsors(spRes.value.sponsors);
+      }
+      if (rRes.status === 'fulfilled' && rRes.value?.success && rRes.value?.rules) {
+        setRules(rRes.value.rules);
+      }
+      if (bRes.status === 'fulfilled' && bRes.value?.success) {
+        setBracketData(bRes.value);
+      }
     } catch (err) {
-      console.error("Error fetching data:", err);
+      console.warn("Non-blocking data fetch notice:", err.message || err);
     }
   };
 
   const refreshUserState = async () => {
     try {
-      const meRes = await fetch('/api/auth/me');
-      if (meRes.ok) {
-        const meData = await meRes.json();
-        if (meData.success) setAuthUser(meData.user);
-        else setAuthUser(null);
+      const results = await Promise.allSettled([
+        fetchWithTimeout('/api/auth/me', {}, 6000).then(r => r.ok ? r.json() : null),
+        fetchWithTimeout('/api/my-team', {}, 6000).then(r => r.ok ? r.json() : null)
+      ]);
+
+      const [meRes, teamRes] = results;
+
+      if (meRes.status === 'fulfilled' && meRes.value?.success && meRes.value?.user) {
+        setAuthUser(meRes.value.user);
+        if (meRes.value.user.role === 'admin') {
+          setIsAdminLoggedIn(true);
+        }
       } else {
         setAuthUser(null);
       }
-    } catch {
-      setAuthUser(null);
-    }
 
-    try {
-      const teamRes = await fetch('/api/my-team');
-      if (teamRes.ok) {
-        const teamData = await teamRes.json();
-        setMyTeam(teamData.success && teamData.team ? teamData.team : null);
+      if (teamRes.status === 'fulfilled' && teamRes.value?.success && teamRes.value?.team) {
+        setMyTeam(teamRes.value.team);
       } else {
         setMyTeam(null);
       }
     } catch {
+      setAuthUser(null);
       setMyTeam(null);
     }
   };
 
   useEffect(() => {
+    let isMounted = true;
+
+    // Hard upper bound: loading screen MUST disappear after at most 4 seconds (TASK 8)
+    const maxLoadingTimer = setTimeout(() => {
+      if (isMounted) setLoading(false);
+    }, 4000);
+
     const bootstrap = async () => {
-      await fetchData();
-      await refreshUserState();
-      const meRes = await fetch('/api/auth/me');
-      if (meRes.ok) {
-        const meData = await meRes.json();
-        if (meData.success && meData.user && meData.user.role === 'admin') {
-          setIsAdminLoggedIn(true);
+      try {
+        await Promise.allSettled([
+          fetchData(),
+          refreshUserState()
+        ]);
+      } catch (err) {
+        console.warn("Bootstrap non-blocking notice:", err);
+      } finally {
+        if (isMounted) {
+          clearTimeout(maxLoadingTimer);
+          setLoading(false);
         }
       }
-      setLoading(false);
     };
+
     bootstrap();
+
+    // Sensible polling interval for live sync (15s) with timeout to prevent duplicate calls (TASK 10)
     const interval = setInterval(() => {
-      fetch('/api/live-sync')
-        .then(r => r.json())
+      fetchWithTimeout('/api/live-sync', {}, 5000)
+        .then(r => r.ok ? r.json() : null)
         .then(data => {
-          if (data.success) {
-            fetch('/api/bracket').then(r => r.json()).then(b => setBracketData(b));
-            fetch('/api/teams').then(r => r.json()).then(t => {
-              if (t.success) setTeams(t.teams);
-            });
+          if (data?.success && isMounted) {
+            fetchWithTimeout('/api/bracket', {}, 5000)
+              .then(r => r.ok ? r.json() : null)
+              .then(b => { if (b?.success && isMounted) setBracketData(b); })
+              .catch(() => {});
+            fetchWithTimeout('/api/teams', {}, 5000)
+              .then(r => r.ok ? r.json() : null)
+              .then(t => { if (t?.success && isMounted) setTeams(t.teams); })
+              .catch(() => {});
           }
         })
         .catch(() => {});
-    }, 5000);
-    return () => clearInterval(interval);
+    }, 15000);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(maxLoadingTimer);
+      clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -136,8 +249,9 @@ function App() {
   });
 
   const totalRegistered = teams.length;
-  const maxCapacity = settings ? settings.maxTeams : 30;
-  const isRegistrationFull = totalRegistered >= maxCapacity || (settings && !settings.registrationOpen);
+  const currentSettings = settings || DEFAULT_SETTINGS;
+  const maxCapacity = currentSettings ? currentSettings.maxTeams : 30;
+  const isRegistrationFull = totalRegistered >= maxCapacity || (currentSettings && !currentSettings.registrationOpen);
   const hasExistingRegistration = !!myTeam;
 
   const handleChatSubmit = (e) => {
@@ -146,13 +260,14 @@ function App() {
     if (!trimmed) return;
 
     const userMessage = { id: Date.now(), type: 'user', text: trimmed };
-    const reply = getChatReply(trimmed, { settings, sponsors, rules });
+    const reply = getChatReply(trimmed, { settings: currentSettings, sponsors, rules });
 
     setChatMessages(prev => [...prev, userMessage, { id: Date.now() + 1, type: 'bot', text: reply }]);
     setChatInput('');
   };
 
-  if (loading || !settings) {
+  // Only show loading screen during initial loading phase; never permanently blocked
+  if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#0c0c0c] text-neutral-300">
         <div className="w-8 h-8 border-2 border-supabase border-t-transparent rounded-full animate-spin mb-3"></div>
