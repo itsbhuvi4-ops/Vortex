@@ -682,66 +682,71 @@ app.get('/api/teams/export-excel', requireAdmin, async (req, res) => {
 
 // Admin Auth Endpoint
 app.post('/api/admin/login', async (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) {
-    return res.status(400).json({ success: false, error: 'Email and password are required.' });
-  }
-
-  const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
-  const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-
-  if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
-    return res.status(500).json({ success: false, error: 'Admin credentials not configured in environment.' });
-  }
-
-  const normalizedInput = String(username).toLowerCase().trim();
-
-  // STRICT REQUIREMENT: Accept ONLY the exact ADMIN_EMAIL (no aliases like 'admin' or 'bhuvi')
-  if (normalizedInput !== ADMIN_EMAIL) {
-    return res.status(401).json({ success: false, error: 'Invalid admin credentials.' });
-  }
-
-  let isAuthenticated = false;
-  let adminName = 'Tournament Admin';
-
-  // 1. Direct password match with configured ADMIN_PASSWORD
-  if (password === ADMIN_PASSWORD) {
-    isAuthenticated = true;
-  }
-
-  // 2. Fallback / verify bcrypt hash in Supabase admins table if available
-  if (!isAuthenticated && supabase) {
-    try {
-      const { data: adminUser } = await supabase
-        .from('admins')
-        .select('id, name, email, password_hash')
-        .eq('email', ADMIN_EMAIL)
-        .maybeSingle();
-
-      if (adminUser && adminUser.password_hash) {
-        const matches = await bcrypt.compare(String(password), adminUser.password_hash);
-        if (matches) {
-          isAuthenticated = true;
-          adminName = adminUser.name || 'Admin';
-        }
-      }
-    } catch (e) {
-      // Ignored
+  try {
+    const { username, password } = req.body || {};
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: 'Email and password are required.' });
     }
+
+    const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
+    const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+
+    if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+      return res.status(500).json({ success: false, error: 'Admin credentials not configured in environment.' });
+    }
+
+    const normalizedInput = String(username).toLowerCase().trim();
+
+    // STRICT REQUIREMENT: Accept ONLY the exact ADMIN_EMAIL (no aliases like 'admin' or 'bhuvi')
+    if (normalizedInput !== ADMIN_EMAIL) {
+      return res.status(401).json({ success: false, error: 'Invalid admin credentials.' });
+    }
+
+    let isAuthenticated = false;
+    let adminName = 'Tournament Admin';
+
+    // 1. Direct password match with configured ADMIN_PASSWORD
+    if (password === ADMIN_PASSWORD) {
+      isAuthenticated = true;
+    }
+
+    // 2. Fallback / verify bcrypt hash in Supabase admins table if available
+    if (!isAuthenticated && supabase) {
+      try {
+        const { data: adminUser } = await supabase
+          .from('admins')
+          .select('id, name, email, password_hash')
+          .eq('email', ADMIN_EMAIL)
+          .maybeSingle();
+
+        if (adminUser && adminUser.password_hash) {
+          const matches = await bcrypt.compare(String(password), adminUser.password_hash);
+          if (matches) {
+            isAuthenticated = true;
+            adminName = adminUser.name || 'Admin';
+          }
+        }
+      } catch (e) {
+        // Ignored
+      }
+    }
+
+    if (!isAuthenticated) {
+      return res.status(401).json({ success: false, error: 'Invalid admin credentials.' });
+    }
+
+    req.session.userId = `admin-${Date.now()}`;
+    req.session.role = 'admin';
+    req.session.adminName = adminName;
+
+    return res.json({
+      success: true,
+      user: { id: req.session.userId, name: adminName, role: 'admin' }
+    });
+  } catch (err) {
+    console.error('[ADMIN AUTH ERROR] Login exception:', err.message);
+    res.status(500).json({ success: false, error: 'An unexpected server error occurred.' });
   }
-
-  if (!isAuthenticated) {
-    return res.status(401).json({ success: false, error: 'Invalid admin credentials.' });
-  }
-
-  req.session.userId = `admin-${Date.now()}`;
-  req.session.role = 'admin';
-  req.session.adminName = adminName;
-
-  return res.json({
-    success: true,
-    user: { id: req.session.userId, name: adminName, role: 'admin' }
-  });
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -765,12 +770,17 @@ app.get('/api/auth/me', (req, res) => {
 });
 
 app.get('/api/my-team', async (req, res) => {
-  if (!req.session || !req.session.userId) {
-    return res.json({ success: true, team: null });
+  try {
+    if (!req.session || !req.session.userId) {
+      return res.json({ success: true, team: null });
+    }
+    const teams = (await getTeamsFromDb()) || localMemoryDb.teams;
+    const team = teams.find(t => t.userId === req.session.userId);
+    res.json({ success: true, team: team || null });
+  } catch (err) {
+    console.error('[DATABASE ERROR] GET /api/my-team:', err.message);
+    res.json({ success: true, team: null });
   }
-  const teams = (await getTeamsFromDb()) || localMemoryDb.teams;
-  const team = teams.find(t => t.userId === req.session.userId);
-  res.json({ success: true, team: team || null });
 });
 
 // Sponsors Endpoints

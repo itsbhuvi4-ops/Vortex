@@ -116,7 +116,7 @@ async function runMigration() {
         .from('teams')
         .select('id')
         .eq('registration_id', regId)
-        .single();
+        .maybeSingle();
 
       let teamId;
       if (!existingTeam) {
