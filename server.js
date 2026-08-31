@@ -130,14 +130,38 @@ const upload = multer({
       cb(null, safeName);
     }
   }),
-  limits: { fileSize: 2 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (!file || !/image\/(jpeg|png|webp)/i.test(file.mimetype)) {
+    if (!file || !/image\/(jpeg|png|webp|jpg)/i.test(file.mimetype)) {
       return cb(new Error('Only JPG, PNG, and WEBP images are allowed.'));
     }
     cb(null, true);
   }
 });
+
+// Helper to save base64 data URI to UPLOADS_DIR and return public URL
+function saveBase64Image(dataUri, prefix = 'file') {
+  if (!dataUri || typeof dataUri !== 'string' || !dataUri.startsWith('data:')) {
+    return dataUri;
+  }
+  try {
+    const matches = dataUri.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) return dataUri;
+    const mimeType = matches[1];
+    let ext = '.png';
+    if (mimeType.includes('jpeg') || mimeType.includes('jpg')) ext = '.jpg';
+    else if (mimeType.includes('webp')) ext = '.webp';
+    
+    const buffer = Buffer.from(matches[2], 'base64');
+    const filename = `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+    const filepath = path.join(UPLOADS_DIR, filename);
+    fs.writeFileSync(filepath, buffer);
+    return `/uploads/${filename}`;
+  } catch (err) {
+    console.error('saveBase64Image error:', err);
+    return dataUri;
+  }
+}
 
 function runDb(sql, params = []) {
   return new Promise((resolve, reject) => {
@@ -240,6 +264,26 @@ async function initializeDatabase() {
           createdAt TEXT NOT NULL
         )`, (err) => { if (err) console.error("Table teams creation error:", err.message); });
 
+        sqliteDb.run(`CREATE TABLE IF NOT EXISTS sponsors (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          role TEXT NOT NULL,
+          description TEXT,
+          logoUrl TEXT,
+          profileLink TEXT,
+          orderIndex INTEGER DEFAULT 0,
+          createdAt TEXT NOT NULL
+        )`, (err) => { if (err) console.error("Table sponsors creation error:", err.message); });
+
+        sqliteDb.run(`CREATE TABLE IF NOT EXISTS rules (
+          id TEXT PRIMARY KEY,
+          category TEXT NOT NULL,
+          title TEXT NOT NULL,
+          content TEXT NOT NULL,
+          orderIndex INTEGER DEFAULT 0,
+          createdAt TEXT NOT NULL
+        )`, (err) => { if (err) console.error("Table rules creation error:", err.message); });
+
         sqliteDb.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_teams_userId ON teams(userId)`, () => {});
         sqliteDb.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)`, () => {
           sqliteDbReady = true;
@@ -268,6 +312,44 @@ async function initializeDatabase() {
         }
       }
     }
+
+    // Seed sponsors into SQLite if empty
+    const sponsorCount = await getDbRow('SELECT COUNT(*) as count FROM sponsors');
+    if (!sponsorCount || sponsorCount.count === 0) {
+      const initialSponsors = (dbData.sponsors && dbData.sponsors.length > 0) ? dbData.sponsors : defaultState.sponsors;
+      for (const sp of initialSponsors) {
+        await runDb(`INSERT OR IGNORE INTO sponsors (id, name, role, description, logoUrl, profileLink, orderIndex, createdAt)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
+          sp.id, sp.name, sp.role, sp.description || '', sp.logoUrl || '', sp.profileLink || '#', sp.orderIndex || 1, new Date().toISOString()
+        ]);
+      }
+    }
+
+    // Seed rules into SQLite if empty
+    const ruleCount = await getDbRow('SELECT COUNT(*) as count FROM rules');
+    if (!ruleCount || ruleCount.count === 0) {
+      const initialRules = (dbData.rules && dbData.rules.length > 0) ? dbData.rules : defaultState.rules;
+      for (const r of initialRules) {
+        await runDb(`INSERT OR IGNORE INTO rules (id, category, title, content, orderIndex, createdAt)
+          VALUES (?, ?, ?, ?, ?, ?)`, [
+          r.id, r.category, r.title, r.content, r.orderIndex || 1, new Date().toISOString()
+        ]);
+      }
+    }
+
+    // Load sponsors & rules from SQLite to sync in-memory cache
+    const sqlSponsors = await getDbRows('SELECT * FROM sponsors ORDER BY orderIndex ASC');
+    if (sqlSponsors && sqlSponsors.length > 0) {
+      db.sponsors = sqlSponsors;
+      dbData.sponsors = sqlSponsors;
+    }
+
+    const sqlRules = await getDbRows('SELECT * FROM rules ORDER BY orderIndex ASC');
+    if (sqlRules && sqlRules.length > 0) {
+      db.rules = sqlRules;
+      dbData.rules = sqlRules;
+    }
+
   } catch (err) {
     console.error('Database initialization error:', err.message || err);
   }
@@ -777,79 +859,99 @@ app.get('/api/teams', async (req, res) => {
   }
 });
 
-app.post('/api/teams', requireAuth, async (req, res) => {
-  if (dbData.teams.length >= dbData.settings.maxTeams || !dbData.settings.registrationOpen) {
-    return res.status(400).json({
-      success: false,
-      message: "REGISTRATION FULL or Closed. Maximum team capacity reached."
-    });
-  }
-
-  const sessionUserId = req.session.userId;
-  const user = await getDbRow('SELECT * FROM users WHERE id = ?', [sessionUserId]);
-  if (!user) {
-    return res.status(401).json({ success: false, message: 'User not found.' });
-  }
-
-  const {
-    teamName,
-    teamLogo,
-    teamLeader,
-    phoneNumber,
-    whatsappNumber,
-    player1,
-    player2,
-    player3,
-    player4,
-    substitute,
-    paymentProof,
-    joinedWhatsapp,
-    joinedDiscord
-  } = req.body;
-
-  if (!teamName || !teamLeader || !phoneNumber || !whatsappNumber || !player1 || !player2 || !player3 || !player4 || !paymentProof) {
-    return res.status(400).json({
-      success: false,
-      message: "All required fields including players (1-4) and payment proof must be provided."
-    });
-  }
-
-  const existingTeam = await getDbRow('SELECT * FROM teams WHERE userId = ?', [sessionUserId]);
-  if (existingTeam) {
-    return res.status(200).json({
-      success: false,
-      duplicate: true,
-      message: 'You have already registered a team.',
-      team: {}
-    });
-  }
-
-  const count = await getDbRow('SELECT COUNT(*) AS count FROM teams');
-  const nextNum = (Number(count?.count || 0) + 1);
-  const formattedNum = String(nextNum).padStart(4, '0');
-  const registrationId = `VC2026-${formattedNum}`;
-
-  const newTeam = {
-    id: `team-${Date.now()}`,
-    userId: sessionUserId,
-    registrationNumber: registrationId,
-    teamName: teamName.trim(),
-    teamLogo: teamLogo || "https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&w=200&q=80",
-    teamLeader: teamLeader.trim(),
-    phoneNumber: phoneNumber.trim(),
-    whatsappNumber: whatsappNumber.trim(),
-    player1: player1.trim(),
-    player2: player2.trim(),
-    player3: player3.trim(),
-    player4: player4.trim(),
-    substitute: substitute ? substitute.trim() : "",
-    paymentProof: paymentProof,
-    joinedWhatsapp: !!joinedWhatsapp,
-    joinedDiscord: !!joinedDiscord,
-    createdAt: new Date().toISOString()
-  };
-
+app.post('/api/teams', async (req, res) => {
   try {
+    if (dbData.settings && (dbData.teams.length >= dbData.settings.maxTeams || !dbData.settings.registrationOpen)) {
+      return res.status(400).json({
+        success: false,
+        message: "REGISTRATION FULL or Closed. Maximum team capacity reached."
+      });
+    }
+
+    const sessionUserId = req.session.userId || `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    req.session.userId = sessionUserId;
+
+    const {
+      teamName,
+      teamLogo,
+      teamLeader,
+      phoneNumber,
+      whatsappNumber,
+      player1,
+      player2,
+      player3,
+      player4,
+      substitute,
+      paymentProof,
+      joinedWhatsapp,
+      joinedDiscord
+    } = req.body || {};
+
+    if (!teamName || !teamLeader || !phoneNumber || !whatsappNumber || !player1 || !player2 || !player3 || !player4 || !paymentProof) {
+      return res.status(400).json({
+        success: false,
+        message: "All required fields including squad details, players (1-4), and payment proof must be provided."
+      });
+    }
+
+    const cleanPhone = String(phoneNumber).trim();
+    const cleanWhatsApp = String(whatsappNumber).trim();
+
+    // Check duplicate team
+    const existingTeam = await getDbRow('SELECT * FROM teams WHERE userId = ? OR phoneNumber = ? OR whatsappNumber = ?', [sessionUserId, cleanPhone, cleanWhatsApp]);
+    if (existingTeam) {
+      return res.status(200).json({
+        success: false,
+        duplicate: true,
+        message: 'A team with this phone number or session has already registered.',
+        team: { ...existingTeam, registrationId: existingTeam.registrationNumber, registeredAt: existingTeam.createdAt }
+      });
+    }
+
+    // Create user row if not exists
+    const existingUser = await getDbRow('SELECT * FROM users WHERE id = ?', [sessionUserId]);
+    if (!existingUser) {
+      const defaultHash = await bcrypt.hash('1234', 10);
+      await runDb('INSERT INTO users (id, name, email, passwordHash, role, createdAt) VALUES (?, ?, ?, ?, ?, ?)', [
+        sessionUserId,
+        String(teamLeader).trim(),
+        `${cleanPhone}@vortex.local`,
+        defaultHash,
+        'user',
+        new Date().toISOString()
+      ]);
+    }
+
+    // Generate unique sequential registration number
+    const countRow = await getDbRow('SELECT COUNT(*) AS count FROM teams');
+    const nextNum = (Number(countRow?.count || 0) + 1);
+    const formattedNum = String(nextNum).padStart(4, '0');
+    const registrationId = `VC2026-${formattedNum}`;
+
+    // Convert base64 payment proof and logo to file on disk for fast, lightweight SQLite operations
+    const savedPaymentProof = saveBase64Image(paymentProof, 'payment');
+    const savedTeamLogo = saveBase64Image(teamLogo, 'crest') || "https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&w=200&q=80";
+
+    const newTeam = {
+      id: `team-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      userId: sessionUserId,
+      registrationNumber: registrationId,
+      teamName: String(teamName).trim(),
+      teamLogo: savedTeamLogo,
+      teamLeader: String(teamLeader).trim(),
+      phoneNumber: cleanPhone,
+      whatsappNumber: cleanWhatsApp,
+      player1: String(player1).trim(),
+      player2: String(player2).trim(),
+      player3: String(player3).trim(),
+      player4: String(player4).trim(),
+      substitute: substitute ? String(substitute).trim() : "",
+      paymentProof: savedPaymentProof,
+      joinedWhatsapp: joinedWhatsapp ? 1 : 0,
+      joinedDiscord: joinedDiscord ? 1 : 0,
+      createdAt: new Date().toISOString()
+    };
+
     await runDb(`INSERT INTO teams (
       id, userId, teamName, teamLogo, teamLeader, phoneNumber, whatsappNumber,
       player1, player2, player3, player4, substitute, paymentProof,
@@ -868,8 +970,8 @@ app.post('/api/teams', requireAuth, async (req, res) => {
       newTeam.player4,
       newTeam.substitute,
       newTeam.paymentProof,
-      newTeam.joinedWhatsapp ? 1 : 0,
-      newTeam.joinedDiscord ? 1 : 0,
+      newTeam.joinedWhatsapp,
+      newTeam.joinedDiscord,
       newTeam.registrationNumber,
       newTeam.createdAt
     ]);
@@ -879,14 +981,20 @@ app.post('/api/teams', requireAuth, async (req, res) => {
     return res.status(201).json({
       success: true,
       message: 'Registration successful!',
-      team: { ...newTeam, registrationId: registrationId, registeredAt: newTeam.createdAt }
+      team: {
+        ...newTeam,
+        registrationId: registrationId,
+        registeredAt: newTeam.createdAt,
+        joinedWhatsapp: !!newTeam.joinedWhatsapp,
+        joinedDiscord: !!newTeam.joinedDiscord
+      }
     });
   } catch (err) {
+    console.error('Team registration error:', err);
     if (err && err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
       return res.status(200).json({ success: false, duplicate: true, message: 'Team already registered.' });
     }
-    console.error('Team registration error:', err);
-    return res.status(500).json({ success: false, message: 'Registration failed.' });
+    return res.status(500).json({ success: false, message: 'Registration failed due to a server error.' });
   }
 });
 
@@ -925,18 +1033,20 @@ app.delete('/api/teams/:id', async (req, res) => {
   }
 });
 
-app.post('/api/uploads/sponsor-image', upload.single('image'), (req, res) => {
-  try {
-    if (!req.file) {
+app.post('/api/uploads/sponsor-image', (req, res) => {
+  upload.any()(req, res, (err) => {
+    if (err) {
+      console.error('Sponsor upload multer error:', err);
+      return res.status(400).json({ success: false, message: err.message || 'Image upload failed.' });
+    }
+    const file = req.files && req.files.length > 0 ? req.files[0] : req.file;
+    if (!file) {
       return res.status(400).json({ success: false, message: 'No sponsor image uploaded.' });
     }
 
-    const publicUrl = `/uploads/${req.file.filename}`;
-    res.json({ success: true, url: publicUrl, filename: req.file.filename });
-  } catch (error) {
-    console.error('Sponsor upload error:', error);
-    res.status(500).json({ success: false, message: 'Sponsor image upload failed.' });
-  }
+    const publicUrl = `/uploads/${file.filename}`;
+    res.json({ success: true, url: publicUrl, filename: file.filename });
+  });
 });
 
 // Excel Export Endpoint (Strictly NO UID, NO Status fields!)
@@ -1047,7 +1157,10 @@ app.get('/api/auth/me', requireAuth, async (req, res) => {
   res.json({ success: true, user });
 });
 
-app.get('/api/my-team', requireAuth, async (req, res) => {
+app.get('/api/my-team', async (req, res) => {
+  if (!req.session || !req.session.userId) {
+    return res.json({ success: true, team: null });
+  }
   const team = await getDbRow('SELECT * FROM teams WHERE userId = ?', [req.session.userId]);
   if (!team) {
     return res.json({ success: true, team: null });
@@ -1075,87 +1188,203 @@ app.get('/api/team/:id', requireAuth, async (req, res) => {
 });
 
 // Sponsors Endpoints
-app.get('/api/sponsors', (req, res) => {
-  const sorted = [...db.sponsors].sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
-  res.json({ success: true, sponsors: sorted });
-});
-
-app.post('/api/sponsors', (req, res) => {
-  const { name, role, description, logoUrl, profileLink, orderIndex } = req.body;
-  if (!name || !role) {
-    return res.status(400).json({ success: false, message: "Sponsor Name and Role are required." });
+app.get('/api/sponsors', async (req, res) => {
+  try {
+    const rows = await getDbRows('SELECT * FROM sponsors ORDER BY orderIndex ASC, createdAt ASC');
+    if (rows && rows.length > 0) {
+      db.sponsors = rows;
+      dbData.sponsors = rows;
+      return res.json({ success: true, sponsors: rows });
+    }
+    const sorted = [...(db.sponsors || [])].sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+    res.json({ success: true, sponsors: sorted });
+  } catch (err) {
+    console.error('Get sponsors error:', err);
+    res.json({ success: true, sponsors: db.sponsors || [] });
   }
-  const newSponsor = {
-    id: `sp-${Date.now()}`,
-    name,
-    role,
-    description: description || "",
-    logoUrl: logoUrl || "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=300&q=80",
-    profileLink: profileLink || "#",
-    orderIndex: Number(orderIndex) || db.sponsors.length + 1
-  };
-  db.sponsors.push(newSponsor);
-  saveDB(db);
-  res.status(201).json({ success: true, sponsor: newSponsor });
 });
 
-app.put('/api/sponsors/:id', (req, res) => {
-  const { id } = req.params;
-  const index = db.sponsors.findIndex(s => s.id === id);
-  if (index === -1) {
-    return res.status(404).json({ success: false, message: "Sponsor not found" });
+app.post('/api/sponsors', async (req, res) => {
+  try {
+    const { name, role, description, logoUrl, profileLink, orderIndex } = req.body || {};
+    if (!name || !role) {
+      return res.status(400).json({ success: false, message: "Sponsor Name and Role are required." });
+    }
+    const savedLogo = saveBase64Image(logoUrl, 'sponsor') || "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=300&q=80";
+    const newSponsor = {
+      id: `sp-${Date.now()}`,
+      name: String(name).trim(),
+      role: String(role).trim(),
+      description: description ? String(description).trim() : "",
+      logoUrl: savedLogo,
+      profileLink: profileLink ? String(profileLink).trim() : "#",
+      orderIndex: Number(orderIndex) || (db.sponsors ? db.sponsors.length + 1 : 1),
+      createdAt: new Date().toISOString()
+    };
+
+    await runDb(`INSERT INTO sponsors (id, name, role, description, logoUrl, profileLink, orderIndex, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [
+      newSponsor.id, newSponsor.name, newSponsor.role, newSponsor.description,
+      newSponsor.logoUrl, newSponsor.profileLink, newSponsor.orderIndex, newSponsor.createdAt
+    ]);
+
+    if (!db.sponsors) db.sponsors = [];
+    db.sponsors.push(newSponsor);
+    dbData.sponsors = db.sponsors;
+    saveDB(db);
+
+    res.status(201).json({ success: true, sponsor: newSponsor });
+  } catch (err) {
+    console.error('Add sponsor error:', err);
+    res.status(500).json({ success: false, message: 'Failed to add sponsor.' });
   }
-  db.sponsors[index] = { ...db.sponsors[index], ...req.body, id };
-  saveDB(db);
-  res.json({ success: true, sponsor: db.sponsors[index] });
 });
 
-app.delete('/api/sponsors/:id', (req, res) => {
-  const { id } = req.params;
-  db.sponsors = db.sponsors.filter(s => s.id !== id);
-  saveDB(db);
-  res.json({ success: true, message: "Sponsor removed successfully" });
+app.put('/api/sponsors/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, role, description, logoUrl, profileLink, orderIndex } = req.body || {};
+
+    const savedLogo = saveBase64Image(logoUrl, 'sponsor');
+
+    await runDb(`UPDATE sponsors SET name = ?, role = ?, description = ?, logoUrl = ?, profileLink = ?, orderIndex = ? WHERE id = ?`, [
+      name, role, description || '', savedLogo, profileLink || '#', Number(orderIndex) || 1, id
+    ]);
+
+    if (!db.sponsors) db.sponsors = [];
+    const index = db.sponsors.findIndex(s => s.id === id);
+    if (index !== -1) {
+      db.sponsors[index] = {
+        ...db.sponsors[index],
+        name: name || db.sponsors[index].name,
+        role: role || db.sponsors[index].role,
+        description: description !== undefined ? description : db.sponsors[index].description,
+        logoUrl: savedLogo || db.sponsors[index].logoUrl,
+        profileLink: profileLink !== undefined ? profileLink : db.sponsors[index].profileLink,
+        orderIndex: orderIndex !== undefined ? Number(orderIndex) : db.sponsors[index].orderIndex,
+        id
+      };
+    } else {
+      db.sponsors.push({
+        id, name, role, description, logoUrl: savedLogo, profileLink, orderIndex: Number(orderIndex) || 1, createdAt: new Date().toISOString()
+      });
+    }
+    dbData.sponsors = db.sponsors;
+    saveDB(db);
+
+    const updatedSponsor = (index !== -1) ? db.sponsors[index] : { id, name, role, description, logoUrl: savedLogo, profileLink, orderIndex };
+    res.json({ success: true, sponsor: updatedSponsor });
+  } catch (err) {
+    console.error('Update sponsor error:', err);
+    res.status(500).json({ success: false, message: 'Failed to update sponsor.' });
+  }
+});
+
+app.delete('/api/sponsors/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await runDb('DELETE FROM sponsors WHERE id = ?', [id]);
+    if (db.sponsors) {
+      db.sponsors = db.sponsors.filter(s => s.id !== id);
+      dbData.sponsors = db.sponsors;
+    }
+    saveDB(db);
+    res.json({ success: true, message: "Sponsor removed successfully" });
+  } catch (err) {
+    console.error('Delete sponsor error:', err);
+    res.status(500).json({ success: false, message: 'Failed to delete sponsor.' });
+  }
 });
 
 // Rules Endpoints
-app.get('/api/rules', (req, res) => {
-  const sorted = [...db.rules].sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
-  res.json({ success: true, rules: sorted });
-});
-
-app.post('/api/rules', (req, res) => {
-  const { category, title, content, orderIndex } = req.body;
-  if (!category || !title || !content) {
-    return res.status(400).json({ success: false, message: "Category, Title, and Content are required." });
+app.get('/api/rules', async (req, res) => {
+  try {
+    const rows = await getDbRows('SELECT * FROM rules ORDER BY orderIndex ASC, createdAt ASC');
+    if (rows && rows.length > 0) {
+      db.rules = rows;
+      dbData.rules = rows;
+      return res.json({ success: true, rules: rows });
+    }
+    const sorted = [...(db.rules || [])].sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+    res.json({ success: true, rules: sorted });
+  } catch (err) {
+    console.error('Get rules error:', err);
+    res.json({ success: true, rules: db.rules || [] });
   }
-  const newRule = {
-    id: `r-${Date.now()}`,
-    category,
-    title,
-    content,
-    orderIndex: Number(orderIndex) || db.rules.length + 1
-  };
-  db.rules.push(newRule);
-  saveDB(db);
-  res.status(201).json({ success: true, rule: newRule });
 });
 
-app.put('/api/rules/:id', (req, res) => {
-  const { id } = req.params;
-  const index = db.rules.findIndex(r => r.id === id);
-  if (index === -1) {
-    return res.status(404).json({ success: false, message: "Rule not found" });
+app.post('/api/rules', async (req, res) => {
+  try {
+    const { category, title, content, orderIndex } = req.body || {};
+    if (!category || !title || !content) {
+      return res.status(400).json({ success: false, message: "Category, Title, and Content are required." });
+    }
+    const newRule = {
+      id: `r-${Date.now()}`,
+      category: String(category).trim(),
+      title: String(title).trim(),
+      content: String(content).trim(),
+      orderIndex: Number(orderIndex) || (db.rules ? db.rules.length + 1 : 1),
+      createdAt: new Date().toISOString()
+    };
+    await runDb(`INSERT INTO rules (id, category, title, content, orderIndex, createdAt) VALUES (?, ?, ?, ?, ?, ?)`, [
+      newRule.id, newRule.category, newRule.title, newRule.content, newRule.orderIndex, newRule.createdAt
+    ]);
+    if (!db.rules) db.rules = [];
+    db.rules.push(newRule);
+    dbData.rules = db.rules;
+    saveDB(db);
+    res.status(201).json({ success: true, rule: newRule });
+  } catch (err) {
+    console.error('Add rule error:', err);
+    res.status(500).json({ success: false, message: 'Failed to add rule.' });
   }
-  db.rules[index] = { ...db.rules[index], ...req.body, id };
-  saveDB(db);
-  res.json({ success: true, rule: db.rules[index] });
 });
 
-app.delete('/api/rules/:id', (req, res) => {
-  const { id } = req.params;
-  db.rules = db.rules.filter(r => r.id !== id);
-  saveDB(db);
-  res.json({ success: true, message: "Rule deleted successfully" });
+app.put('/api/rules/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { category, title, content, orderIndex } = req.body || {};
+
+    await runDb(`UPDATE rules SET category = ?, title = ?, content = ?, orderIndex = ? WHERE id = ?`, [
+      category, title, content, Number(orderIndex) || 1, id
+    ]);
+
+    if (!db.rules) db.rules = [];
+    const index = db.rules.findIndex(r => r.id === id);
+    if (index !== -1) {
+      db.rules[index] = {
+        ...db.rules[index],
+        category: category || db.rules[index].category,
+        title: title || db.rules[index].title,
+        content: content || db.rules[index].content,
+        orderIndex: orderIndex !== undefined ? Number(orderIndex) : db.rules[index].orderIndex,
+        id
+      };
+    }
+    dbData.rules = db.rules;
+    saveDB(db);
+    res.json({ success: true, rule: (index !== -1) ? db.rules[index] : { id, category, title, content, orderIndex } });
+  } catch (err) {
+    console.error('Update rule error:', err);
+    res.status(500).json({ success: false, message: 'Failed to update rule.' });
+  }
+});
+
+app.delete('/api/rules/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await runDb('DELETE FROM rules WHERE id = ?', [id]);
+    if (db.rules) {
+      db.rules = db.rules.filter(r => r.id !== id);
+      dbData.rules = db.rules;
+    }
+    saveDB(db);
+    res.json({ success: true, message: "Rule deleted successfully" });
+  } catch (err) {
+    console.error('Delete rule error:', err);
+    res.status(500).json({ success: false, message: 'Failed to delete rule.' });
+  }
 });
 
 // -------------------------------------------------------------

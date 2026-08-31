@@ -1146,17 +1146,29 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
   };
 
   const handleSubmit = async () => {
+    if (!formData.teamName || !formData.teamLeader || !formData.phoneNumber || !formData.whatsappNumber) {
+      showToast("Please fill in all squad details", "error");
+      return;
+    }
+    if (!formData.player1 || !formData.player2 || !formData.player3 || !formData.player4) {
+      showToast("Please provide all 4 players (1-4)", "error");
+      return;
+    }
+    if (!formData.paymentProof) {
+      showToast("Please upload your payment screenshot", "error");
+      return;
+    }
     if (!formData.joinedWhatsapp || !formData.joinedDiscord) {
       showToast("Please confirm community joins", "error");
       return;
     }
     setSubmitting(true);
     try {
-      const res = await fetch('/api/teams', {
+      const res = await fetchWithTimeout('/api/teams', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
-      });
+      }, 15000);
       const data = await res.json();
       if (data.success) {
         const team = data.team;
@@ -1164,12 +1176,13 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
         setStep(5);
         if (window.confetti) window.confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
         showToast(data.duplicate ? "Team already registered. Showing pass." : "Registration successful", data.duplicate ? "info" : "success");
-        onRegisterSuccess();
+        if (onRegisterSuccess) onRegisterSuccess();
       } else {
-        showToast(data.message || "Failed to register", "error");
+        showToast(data.message || "Failed to register team", "error");
       }
-    } catch {
-      showToast("Network error submitting form", "error");
+    } catch (err) {
+      console.error("Registration submit error:", err);
+      showToast(err.message || "Network error submitting form", "error");
     } finally {
       setSubmitting(false);
     }
@@ -1723,19 +1736,24 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
     const method = editingSponsor ? 'PUT' : 'POST';
     const url = editingSponsor ? `/api/sponsors/${editingSponsor.id}` : '/api/sponsors';
 
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
+    try {
+      const res = await fetchWithTimeout(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }, 10000);
+      const data = await res.json();
 
-    if (data.success) {
-      showToast(editingSponsor ? 'Sponsor updated' : 'Sponsor added', 'success');
-      resetSponsorForm();
-      fetchData();
-    } else {
-      showToast(data.message || 'Sponsor update failed', 'error');
+      if (data.success) {
+        showToast(editingSponsor ? 'Sponsor updated' : 'Sponsor added', 'success');
+        resetSponsorForm();
+        await fetchData();
+      } else {
+        showToast(data.message || 'Sponsor update failed', 'error');
+      }
+    } catch (err) {
+      console.error('Sponsor save error:', err);
+      showToast(err.message || 'Network error saving sponsor', 'error');
     }
   };
 
