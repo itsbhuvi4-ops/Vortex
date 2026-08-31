@@ -1,32 +1,12 @@
-# Dependencies
 node_modules/
-
-# Local databases and runtime data
-data/*.db
-data/*.db-journal
-data/database.json
-
-# Uploads runtime files
-uploads/*
-!uploads/.gitkeep
-
-# Backup files
-*.backup*
+data/
+uploads/
 *.backup
-
-# Environment variables & secrets
+*.backup2
+*.backup3
 .env
 .env.*
-
-# Logs
 *.log
-npm-debug.log*
-
-# Vercel
 .vercel/
-
-# OS and IDE files
 .DS_Store
 Thumbs.db
-.vscode/
-.idea/

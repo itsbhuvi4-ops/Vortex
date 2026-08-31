@@ -908,15 +908,15 @@ app.post('/api/teams', async (req, res) => {
       });
     }
 
-    // Create user row if not exists
-    const existingUser = await getDbRow('SELECT * FROM users WHERE id = ?', [sessionUserId]);
+    // Create guest user row if not exists using fast precomputed hash to avoid CPU bottleneck
+    const existingUser = await getDbRow('SELECT id FROM users WHERE id = ?', [sessionUserId]);
     if (!existingUser) {
-      const defaultHash = await bcrypt.hash('1234', 10);
+      const guestHash = '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
       await runDb('INSERT INTO users (id, name, email, passwordHash, role, createdAt) VALUES (?, ?, ?, ?, ?, ?)', [
         sessionUserId,
         String(teamLeader).trim(),
         `${cleanPhone}@vortex.local`,
-        defaultHash,
+        guestHash,
         'user',
         new Date().toISOString()
       ]);
@@ -928,7 +928,7 @@ app.post('/api/teams', async (req, res) => {
     const formattedNum = String(nextNum).padStart(4, '0');
     const registrationId = `VC2026-${formattedNum}`;
 
-    // Convert base64 payment proof and logo to file on disk for fast, lightweight SQLite operations
+    // Convert base64 payment proof and logo to file on disk
     const savedPaymentProof = saveBase64Image(paymentProof, 'payment');
     const savedTeamLogo = saveBase64Image(teamLogo, 'crest') || "https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&w=200&q=80";
 
@@ -976,7 +976,13 @@ app.post('/api/teams', async (req, res) => {
       newTeam.createdAt
     ]);
 
-    await syncLegacyTeamCache();
+    // Fast in-memory cache update
+    if (!dbData.teams) dbData.teams = [];
+    dbData.teams.unshift({
+      ...newTeam,
+      registrationId: newTeam.registrationNumber,
+      registeredAt: newTeam.createdAt
+    });
 
     return res.status(201).json({
       success: true,
