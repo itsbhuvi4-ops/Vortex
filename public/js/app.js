@@ -194,17 +194,62 @@ function App() {
 
   useEffect(() => {
     let isMounted = true;
+    let realtimeChannel = null;
 
     // Hard upper bound: loading screen MUST disappear after at most 4 seconds (TASK 8)
     const maxLoadingTimer = setTimeout(() => {
       if (isMounted) setLoading(false);
     }, 4000);
 
+    const initRealtime = async () => {
+      try {
+        const configRes = await fetchWithTimeout('/api/config', {}, 5000).then(r => r.ok ? r.json() : null);
+        if (configRes?.success && configRes.supabaseUrl && configRes.supabaseAnonKey && window.supabase) {
+          const supabaseClient = window.supabase.createClient(configRes.supabaseUrl, configRes.supabaseAnonKey);
+          realtimeChannel = supabaseClient.channel('vortex-realtime-public')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, () => {
+              if (isMounted) {
+                fetchWithTimeout('/api/teams', {}, 5000).then(r => r.ok ? r.json() : null).then(t => { if (t?.success && isMounted) setTeams(t.teams); }).catch(() => {});
+              }
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
+              if (isMounted) {
+                fetchWithTimeout('/api/bracket', {}, 5000).then(r => r.ok ? r.json() : null).then(b => { if (b?.success && isMounted) setBracketData(b); }).catch(() => {});
+              }
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_settings' }, () => {
+              if (isMounted) {
+                fetchWithTimeout('/api/settings', {}, 5000).then(r => r.ok ? r.json() : null).then(s => { if (s?.success && isMounted) setSettings(s.settings); }).catch(() => {});
+                fetchWithTimeout('/api/bracket', {}, 5000).then(r => r.ok ? r.json() : null).then(b => { if (b?.success && isMounted) setBracketData(b); }).catch(() => {});
+              }
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'rules' }, () => {
+              if (isMounted) {
+                fetchWithTimeout('/api/rules', {}, 5000).then(r => r.ok ? r.json() : null).then(r => { if (r?.success && isMounted) setRules(r.rules); }).catch(() => {});
+              }
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'sponsors' }, () => {
+              if (isMounted) {
+                fetchWithTimeout('/api/sponsors', {}, 5000).then(r => r.ok ? r.json() : null).then(sp => { if (sp?.success && isMounted) setSponsors(sp.sponsors); }).catch(() => {});
+              }
+            })
+            .subscribe((status) => {
+              if (status === 'SUBSCRIBED') {
+                console.log('[REALTIME] Supabase live stream connected successfully');
+              }
+            });
+        }
+      } catch (err) {
+        console.warn('[REALTIME] Notice:', err.message || err);
+      }
+    };
+
     const bootstrap = async () => {
       try {
         await Promise.allSettled([
           fetchData(),
-          refreshUserState()
+          refreshUserState(),
+          initRealtime()
         ]);
       } catch (err) {
         console.warn("Bootstrap non-blocking notice:", err);
@@ -241,6 +286,9 @@ function App() {
       isMounted = false;
       clearTimeout(maxLoadingTimer);
       clearInterval(interval);
+      if (realtimeChannel && window.supabase) {
+        try { realtimeChannel.unsubscribe(); } catch (e) {}
+      }
     };
   }, []);
 

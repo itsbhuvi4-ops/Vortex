@@ -1,72 +1,43 @@
 # DS TAMIL GAMING — VORTEX CLASH 2026
-### Interactive Esports Tournament Website
+### Production Interactive Esports Tournament Platform
 
-A complete, production-ready interactive esports tournament web platform for **DS TAMIL GAMING presents VORTEX CLASH 2026**.
+A production-ready esports tournament web platform for **DS TAMIL GAMING presents VORTEX CLASH 2026** powered by Node.js, Express, Supabase PostgreSQL, Supabase Storage, and React 18 with Realtime sync.
 
 ---
 
 ## ⚡ Key Highlights & Features
 
-1. **Esports Theme & Visuals**:
-   - Dark aesthetic with vortex cyan, electric purple, and fiery crimson accents.
-   - Glassmorphism panels, glow effects, responsive mobile menu, and canvas confetti for the championship.
+1. **Production Database & Storage (Supabase)**:
+   - **Supabase PostgreSQL**: Permanent database source of truth for teams, players, tournament settings, rules, sponsors, matches, and admin credentials.
+   - **Supabase Storage**: Persistent storage buckets for `team-logos`, `payment-proofs`, and `sponsor-images` (rejects files > 5MB and non-image types).
+   - **Zero Data Loss**: No ephemeral `/tmp`, local JSON, or local SQLite source-of-truth dependencies in production.
 
-2. **Homepage & Tournament Directory**:
-   - Tournament poster viewer, rules preview, sponsors spotlight, dynamic capacity counter (`24 / 30 TEAMS REGISTERED` or `REGISTRATION FULL`).
-   - Quick action buttons: **REGISTER NOW** & **VIEW BRACKET**.
+2. **Realtime Live Updates**:
+   - Supabase Realtime WebSocket events automatically update user views when admins advance match winners, change bracket schedules, update rules, add sponsors, or adjust tournament capacity without requiring manual browser refresh.
+   - Intelligent polling fallback (15-30s) if WebSockets disconnect.
 
-3. **Single-Elimination Knockout Bracket Engine**:
+3. **Atomic Team Registration & 30-Team Limit**:
+   - Atomic database locking ensures registrations never exceed the strict 30-team limit.
+   - Duplicate prevention guards against duplicate submissions by phone number, WhatsApp number, or session ID.
+   - Sequential unique registration numbers generated atomically (`VC2026-0001`, `VC2026-0002`, ...).
+   - Instant team pass generation with printable confirmation.
+
+4. **Single-Elimination Knockout Bracket Engine**:
    - Automatic Bye generation for non-power-of-two team counts.
-   - State control: `BRACKET WILL BE ANNOUNCED SOON` (pre-publish) → `LIVE TOURNAMENT BRACKET` (post-publish).
-   - Match countdown timer (`DAYS : HOURS : MINUTES : SECONDS`) automatically transitioning to `MATCH LIVE` when timer hits zero.
-   - Winner progression: Selecting a match winner automatically advances the winning team to the correct slot in the subsequent round.
-   - Dynamic result editing and downstream reset calculation.
+   - State control: `UNPUBLISHED` (pre-publish) → `PUBLISHED` (live tournament bracket).
+   - Match countdown timer with automatic transition to `MATCH LIVE`.
+   - Winner progression: Selecting a match winner automatically advances the squad to the subsequent match slot.
+   - Downstream cascade recalculation upon match resets.
    - Grand Final `🏆 TOURNAMENT CHAMPION` showcase card with team logo and title.
 
-4. **Multi-Step Squad Registration Flow**:
-   - **Step 1**: Sponsors & Rules compliance checklist with mandatory agreement.
-   - **Step 2**: Team Details (Team Logo upload with live preview, Team Name, Leader Name, Phone, WhatsApp).
-   - **Step 3**: Players (Player 1*, Player 2*, Player 3*, Player 4*, Substitute). **Strictly NO UID / Game ID fields anywhere**.
-   - **Step 4**: Payment Section (Registration Fee, Payment QR Code, Instructions, Payment Screenshot Proof upload).
-   - **Step 5**: WhatsApp & Discord verification checkboxes (`I have joined WhatsApp`, `I have joined Discord`).
-   - **Step 6**: Registration Pass / Success Ticket with unique ID (e.g. `VC2026-0001`) and printable confirmation.
+5. **Hardened Security & Protected Admin APIs**:
+   - Strict `requireAdmin` middleware protecting all mutating operations (teams, matches, sponsors, rules, settings, image uploads, Excel export).
+   - Development/debug endpoints disabled with 404 in production.
+   - Secure HTTP-only session cookies with dynamic random secret and bcrypt authentication.
+   - Protected Excel download (`/api/teams/export-excel`).
 
-5. **Admin Control Suite**:
-   - Secure login (Passcode: `admin123`).
-   - **Dashboard**: High-level telemetry for registrations, capacity, bracket status, and match statistics.
-   - **Teams Management**: Table search, payment proof previewer, download proof, edit/delete squad.
-   - **Excel Export**: Single-click export of clean `.xlsx` spreadsheet (Strictly NO UID, NO selection/rejection status).
-   - **Bracket Controller**: Generate bracket, rearrange teams, lock/unlock bracket, publish/unpublish, schedule match times, select winners, reset results.
-   - **Sponsor & Rule Management**: Full CRUD modals.
-   - **Tournament Settings**: Configure tournament name, poster, fee, max capacity, registration open/closed toggle, QR code, and WhatsApp/Discord links.
-
----
-
-## 🚀 How to Run
-
-1. Open your terminal in this directory:
-   ```bash
-   cd c:\Users\Admin\OneDrive\Desktop\Vortex
-   ```
-
-2. Install dependencies (Express, CORS, Multer, XLSX):
-   ```bash
-   npm install
-   ```
-
-3. Start the server:
-   ```bash
-   node server.js
-   ```
-
-4. Open your browser:
-   ```
-   http://localhost:3000
-   ```
-
-5. **Admin Access**:
-   - Click the shield icon in the top right or footer.
-   - Default passcode: `admin123`
+6. **Vercel Serverless Ready**:
+   - Native Vercel serverless support configured in `vercel.json`.
 
 ---
 
@@ -74,15 +45,58 @@ A complete, production-ready interactive esports tournament web platform for **D
 
 ```
 Vortex/
-├── data/
-│   └── database.json          # Persistent JSON file storage
+├── .env.example                       # Production environment variables template
+├── SUPABASE_SETUP.md                  # Step-by-step Supabase database & storage setup
+├── vercel.json                        # Vercel serverless deployment config
+├── supabase/
+│   └── migrations/
+│       └── 001_initial_schema.sql     # Supabase SQL schema, triggers, and buckets
+├── lib/
+│   └── supabase.js                    # Production Supabase PostgreSQL & Storage client
+├── scripts/
+│   └── migrate-existing-data.js       # Data migration script from JSON to Supabase
 ├── public/
 │   ├── css/
-│   │   └── style.css          # Esports theme, neon glow, bracket styles
+│   │   └── style.css                  # Esports theme, neon glow, bracket styles
 │   ├── js/
-│   │   └── app.js             # React 18 frontend (Home, Bracket, Reg, Admin)
-│   └── index.html             # Main entry point with Tailwind & Lucide
-├── package.json               # Dependencies and scripts
-├── server.js                  # Express backend & Knockout engine
-└── README.md                  # Documentation
+│   │   └── app.js                     # React 18 frontend with Supabase Realtime
+│   └── index.html                     # Main entry point with Tailwind, Lucide, Supabase JS
+├── package.json                       # Dependencies and scripts
+├── server.js                          # Production Express backend & Knockout engine
+└── README.md                          # Platform documentation
 ```
+
+---
+
+## 🚀 Quick Start
+
+### 1. Install Dependencies
+```bash
+npm install
+```
+
+### 2. Configure Environment Variables
+Copy `.env.example` to `.env` and fill in your Supabase credentials:
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_public_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_secret_service_role_key
+SESSION_SECRET=your_strong_session_secret
+ADMIN_EMAIL=admin@vortexclash.com
+ADMIN_PASSWORD=your_secure_admin_password
+MAX_TEAMS=30
+```
+
+### 3. Run Database Migration
+Follow [SUPABASE_SETUP.md](file:///c:/Users/Admin/OneDrive/Desktop/Vortex/SUPABASE_SETUP.md) and execute `supabase/migrations/001_initial_schema.sql` in your Supabase SQL Editor.
+
+### 4. Migrate Existing Data (Optional)
+```bash
+node scripts/migrate-existing-data.js
+```
+
+### 5. Start the Server
+```bash
+npm start
+```
+Visit `http://localhost:3000`.
