@@ -1858,6 +1858,25 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
     }
   };
 
+  const handleViewProof = async (proof) => {
+    if (!proof) return;
+    if (proof.startsWith('http://') || proof.startsWith('https://') || proof.startsWith('/uploads/')) {
+      setViewProof(proof);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/admin/payment-proof-url?proof=${encodeURIComponent(proof)}`);
+      const data = await res.json();
+      if (data.success && data.url) {
+        setViewProof(data.url);
+      } else {
+        showToast(data.error || "Failed to load payment proof", "error");
+      }
+    } catch (err) {
+      showToast("Error retrieving payment proof", "error");
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Admin Top Bar */}
@@ -1926,7 +1945,7 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
                     <td className="p-3">{t.teamLeader}</td>
                     <td className="p-3 text-neutral-400">{t.phoneNumber}</td>
                     <td className="p-3">
-                      <button onClick={() => setViewProof(t.paymentProof)} className="text-xs text-supabase hover:underline">
+                      <button onClick={() => handleViewProof(t.paymentProof)} className="text-xs text-supabase hover:underline">
                         View
                       </button>
                     </td>
@@ -2303,8 +2322,8 @@ function AdminLoginModal({ onClose, onSuccess, showToast }) {
       return;
     }
 
-    setError(data.message || 'Invalid username or password.');
-    showToast(data.message || 'Invalid username or password.', 'error');
+    setError(data.error || data.message || 'Invalid email or password.');
+    showToast(data.error || data.message || 'Invalid email or password.', 'error');
   };
 
   return (
@@ -2327,13 +2346,13 @@ function AdminLoginModal({ onClose, onSuccess, showToast }) {
 
               <form onSubmit={handleLogin} className="space-y-5">
                 <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-2">Username</label>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">Admin Email</label>
                   <input
-                    type="text"
+                    type="email"
                     autoFocus
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Bhuvi"
+                    placeholder="admin@vortexclash.com"
                     className="w-full h-12 rounded-xl border border-[#2a2a2a] bg-[#0b0b0b] px-3.5 text-sm text-white placeholder:text-neutral-500 shadow-sm transition focus:border-[#3ecf8e] focus:outline-none focus:ring-2 focus:ring-[#3ecf8e]/20"
                   />
                 </div>
@@ -2344,7 +2363,7 @@ function AdminLoginModal({ onClose, onSuccess, showToast }) {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••"
+                    placeholder="••••••••"
                     className="w-full h-12 rounded-xl border border-[#2a2a2a] bg-[#0b0b0b] px-3.5 text-sm text-white placeholder:text-neutral-500 shadow-sm transition focus:border-[#3ecf8e] focus:outline-none focus:ring-2 focus:ring-[#3ecf8e]/20"
                   />
                 </div>

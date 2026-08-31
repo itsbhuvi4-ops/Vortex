@@ -248,18 +248,21 @@ $$ LANGUAGE plpgsql;
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES 
   ('team-logos', 'team-logos', true, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/jpg']),
-  ('payment-proofs', 'payment-proofs', true, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/jpg']),
+  ('payment-proofs', 'payment-proofs', false, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/jpg']), -- PRIVATE BUCKET
   ('sponsor-images', 'sponsor-images', true, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/jpg'])
 ON CONFLICT (id) DO UPDATE SET
-  public = true,
+  public = EXCLUDED.public,
   file_size_limit = 5242880,
   allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
 
--- Storage Policies for Public Reading and Authenticated/Service Role Writes
+-- Storage Policies for Public Reading (Public Buckets Only)
 CREATE POLICY "Public Read Access on team-logos" ON storage.objects FOR SELECT USING (bucket_id = 'team-logos');
-CREATE POLICY "Public Read Access on payment-proofs" ON storage.objects FOR SELECT USING (bucket_id = 'payment-proofs');
 CREATE POLICY "Public Read Access on sponsor-images" ON storage.objects FOR SELECT USING (bucket_id = 'sponsor-images');
 
+-- Service Role / Admin Access on Private payment-proofs
+CREATE POLICY "Admin Read Access on payment-proofs" ON storage.objects FOR SELECT USING (bucket_id = 'payment-proofs' AND (auth.role() = 'service_role' OR auth.role() = 'authenticated'));
+
+-- Service Role Upload Policies
 CREATE POLICY "Service Role Upload on team-logos" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'team-logos');
 CREATE POLICY "Service Role Upload on payment-proofs" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'payment-proofs');
 CREATE POLICY "Service Role Upload on sponsor-images" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'sponsor-images');

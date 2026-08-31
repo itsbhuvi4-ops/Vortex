@@ -14,6 +14,8 @@ const {
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
   uploadToSupabaseStorage,
+  getSignedPaymentProofUrl,
+  ensureAdminUserExists,
   getSettingsFromDb,
   saveSettingsToDb,
   getTeamsFromDb,
@@ -29,6 +31,11 @@ const {
   getBracketFromDb,
   saveBracketToDb
 } = require('./lib/supabase');
+
+// Auto-seed admin user in Supabase if configured
+if (isSupabaseConfigured) {
+  ensureAdminUserExists().catch(err => console.warn('[ADMIN SEED NOTICE]:', err.message));
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -419,13 +426,26 @@ app.get('/api/teams', async (req, res) => {
     const teams = dbTeams !== null ? dbTeams : localMemoryDb.teams;
     const settings = (await getSettingsFromDb()) || localMemoryDb.settings;
     const maxTeams = Number(settings.maxTeams || process.env.MAX_TEAMS || 30);
+    const isAdmin = req.session && req.session.role === 'admin';
+
+    // Protect private payment proof access (signed URLs for admin only, hidden from public)
+    const sanitizedTeams = await Promise.all(teams.map(async (t) => {
+      let paymentProofUrl = 'Protected (Admin Only)';
+      if (isAdmin) {
+        paymentProofUrl = await getSignedPaymentProofUrl(t.paymentProof);
+      }
+      return {
+        ...t,
+        paymentProof: paymentProofUrl
+      };
+    }));
 
     res.json({
       success: true,
-      totalTeams: teams.length,
+      totalTeams: sanitizedTeams.length,
       maxTeams: maxTeams,
-      isFull: teams.length >= maxTeams,
-      teams
+      isFull: sanitizedTeams.length >= maxTeams,
+      teams: sanitizedTeams
     });
   } catch (err) {
     console.error('[DATABASE ERROR] GET /api/teams:', err.message);
@@ -599,26 +619,44 @@ app.post('/api/uploads/sponsor-image', requireAdmin, (req, res) => {
   });
 });
 
+// Admin Payment Proof Signed URL helper
+app.get('/api/admin/payment-proof-url', requireAdmin, async (req, res) => {
+  try {
+    const { proof } = req.query;
+    if (!proof) {
+      return res.status(400).json({ success: false, error: 'Payment proof identifier required.' });
+    }
+    const signedUrl = await getSignedPaymentProofUrl(proof);
+    res.json({ success: true, url: signedUrl });
+  } catch (err) {
+    console.error('[ADMIN ERROR] Signed URL generation failed:', err.message);
+    res.status(500).json({ success: false, error: 'Failed to generate signed URL.' });
+  }
+});
+
 // Excel Export Endpoint (Admin Only)
 app.get('/api/teams/export-excel', requireAdmin, async (req, res) => {
   try {
     const dbTeams = await getTeamsFromDb();
     const teams = dbTeams || localMemoryDb.teams || [];
 
-    const exportData = teams.map((team, idx) => ({
-      "S.No": idx + 1,
-      "Registration ID": team.registrationId || team.registrationNumber,
-      "Team Name": team.teamName,
-      "Team Leader": team.teamLeader,
-      "Phone Number": team.phoneNumber,
-      "WhatsApp Number": team.whatsappNumber,
-      "Player 1": team.player1,
-      "Player 2": team.player2,
-      "Player 3": team.player3,
-      "Player 4": team.player4,
-      "Substitute": team.substitute || "None",
-      "Payment Proof": team.paymentProof,
-      "Registration Date": new Date(team.registeredAt || team.createdAt).toLocaleString()
+    const exportData = await Promise.all(teams.map(async (team, idx) => {
+      const signedProofUrl = await getSignedPaymentProofUrl(team.paymentProof);
+      return {
+        "S.No": idx + 1,
+        "Registration ID": team.registrationId || team.registrationNumber,
+        "Team Name": team.teamName,
+        "Team Leader": team.teamLeader,
+        "Phone Number": team.phoneNumber,
+        "WhatsApp Number": team.whatsappNumber,
+        "Player 1": team.player1,
+        "Player 2": team.player2,
+        "Player 3": team.player3,
+        "Player 4": team.player4,
+        "Substitute": team.substitute || "None",
+        "Payment Proof": signedProofUrl || "Attachment",
+        "Registration Date": new Date(team.registeredAt || team.createdAt).toLocaleString()
+      };
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -646,31 +684,39 @@ app.get('/api/teams/export-excel', requireAdmin, async (req, res) => {
 app.post('/api/admin/login', async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
-    return res.status(400).json({ success: false, error: 'Username/email and password are required.' });
+    return res.status(400).json({ success: false, error: 'Email and password are required.' });
   }
 
-  const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'admin@vortexclash.com').toLowerCase().trim();
+  const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
   const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
+  if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+    return res.status(500).json({ success: false, error: 'Admin credentials not configured in environment.' });
+  }
+
   const normalizedInput = String(username).toLowerCase().trim();
+
+  // STRICT REQUIREMENT: Accept ONLY the exact ADMIN_EMAIL (no aliases like 'admin' or 'bhuvi')
+  if (normalizedInput !== ADMIN_EMAIL) {
+    return res.status(401).json({ success: false, error: 'Invalid admin credentials.' });
+  }
 
   let isAuthenticated = false;
   let adminName = 'Tournament Admin';
 
-  if (ADMIN_PASSWORD && (normalizedInput === ADMIN_EMAIL || normalizedInput === 'admin' || normalizedInput === 'bhuvi')) {
-    if (password === ADMIN_PASSWORD) {
-      isAuthenticated = true;
-    }
+  // 1. Direct password match with configured ADMIN_PASSWORD
+  if (password === ADMIN_PASSWORD) {
+    isAuthenticated = true;
   }
 
-  // Check Supabase admins table if available
+  // 2. Fallback / verify bcrypt hash in Supabase admins table if available
   if (!isAuthenticated && supabase) {
     try {
       const { data: adminUser } = await supabase
         .from('admins')
-        .select('*')
-        .eq('email', normalizedInput)
-        .single();
+        .select('id, name, email, password_hash')
+        .eq('email', ADMIN_EMAIL)
+        .maybeSingle();
 
       if (adminUser && adminUser.password_hash) {
         const matches = await bcrypt.compare(String(password), adminUser.password_hash);
@@ -682,12 +728,6 @@ app.post('/api/admin/login', async (req, res) => {
     } catch (e) {
       // Ignored
     }
-  }
-
-  // Fallback check for initial setup
-  if (!isAuthenticated && !ADMIN_PASSWORD && (normalizedInput === 'admin' || normalizedInput === ADMIN_EMAIL)) {
-    // When no password configured yet, allow setup prompt or deny
-    return res.status(401).json({ success: false, error: 'Admin credentials not configured. Please set ADMIN_PASSWORD in environment.' });
   }
 
   if (!isAuthenticated) {
