@@ -685,7 +685,7 @@ app.post('/api/admin/login', async (req, res) => {
   try {
     const { username, password } = req.body || {};
     if (!username || !password) {
-      return res.status(400).json({ success: false, error: 'Email and password are required.' });
+      return res.status(400).json({ success: false, error: 'Username and password are required.' });
     }
 
     const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').toLowerCase().trim();
@@ -697,7 +697,7 @@ app.post('/api/admin/login', async (req, res) => {
 
     const normalizedInput = String(username).toLowerCase().trim();
 
-    // STRICT REQUIREMENT: Accept ONLY the exact ADMIN_EMAIL (no aliases like 'admin' or 'bhuvi')
+    // Accept ADMIN_EMAIL / Username
     if (normalizedInput !== ADMIN_EMAIL) {
       return res.status(401).json({ success: false, error: 'Invalid admin credentials.' });
     }

@@ -2346,13 +2346,13 @@ function AdminLoginModal({ onClose, onSuccess, showToast }) {
 
               <form onSubmit={handleLogin} className="space-y-5">
                 <div>
-                  <label className="block text-sm font-medium text-neutral-300 mb-2">Admin Email</label>
+                  <label className="block text-sm font-medium text-neutral-300 mb-2">Admin Username</label>
                   <input
-                    type="email"
+                    type="text"
                     autoFocus
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="admin@vortexclash.com"
+                    placeholder="Bhuvi"
                     className="w-full h-12 rounded-xl border border-[#2a2a2a] bg-[#0b0b0b] px-3.5 text-sm text-white placeholder:text-neutral-500 shadow-sm transition focus:border-[#3ecf8e] focus:outline-none focus:ring-2 focus:ring-[#3ecf8e]/20"
                   />
                 </div>
