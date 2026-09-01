@@ -8,7 +8,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ================================================================
--- 1. SEQUENCE FOR ATOMIC REGISTRATION IDS (VC2026-XXXX)
+-- 1. SEQUENCE FOR ATOMIC REGISTRATION IDS (VORTEX###)
 -- ================================================================
 CREATE SEQUENCE IF NOT EXISTS team_reg_seq START WITH 1 INCREMENT BY 1;
 
@@ -151,7 +151,7 @@ DECLARE
   next_val BIGINT;
 BEGIN
   next_val := nextval('team_reg_seq');
-  RETURN 'VC2026-' || LPAD(next_val::TEXT, 4, '0');
+  RETURN 'VORTEX' || LPAD(next_val::TEXT, 3, '0');
 END;
 $$;
 

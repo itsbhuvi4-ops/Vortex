@@ -212,20 +212,20 @@ const defaultState = {
   sponsors: [
     {
       id: "sp-1",
-      name: "TITAN GEAR ESPORTS",
-      role: "Title Sponsor & Official Hardware Partner",
-      description: "Equipping champions with ultra-low latency mechanical keyboards, high-DPI optical mice, and pro headsets.",
+      name: "RDX ESPORTS",
+      role: "Official Sponsor",
+      description: "Premium esports partner for VORTEX CLASH 2026.",
       logoUrl: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=300&q=80",
-      profileLink: "https://example.com/titan-gear",
+      profileLink: "#",
       orderIndex: 1
     },
     {
       id: "sp-2",
-      name: "VORTEX ENERGY",
-      role: "Official Energy Drink Partner",
-      description: "Maximum focus, zero crash. Formulated specifically for competitive esports athletes and long tournament grinds.",
+      name: "FAIZ 777",
+      role: "Official Partner",
+      description: "Community-first esports support and tournament activations.",
       logoUrl: "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=300&q=80",
-      profileLink: "https://example.com/vortex-energy",
+      profileLink: "#",
       orderIndex: 2
     },
     {
@@ -260,6 +260,10 @@ const defaultState = {
 let localMemoryDb = JSON.parse(JSON.stringify(defaultState));
 
 const VALID_REGISTRATION_STATUSES = new Set(['open', 'closed', 'coming_soon']);
+
+function formatRegistrationId(sequenceNumber) {
+  return `VORTEX${String(Number(sequenceNumber || 1)).padStart(3, '0')}`;
+}
 
 function normalizeRegistrationStatus(settings = {}) {
   if (VALID_REGISTRATION_STATUSES.has(settings.registrationStatus)) return settings.registrationStatus;
@@ -653,7 +657,7 @@ app.post('/api/teams', async (req, res) => {
       if (existing) {
         return res.status(200).json({ success: false, duplicate: true, error: "Team already registered.", team: existing });
       }
-      const regId = `VC2026-${String(localMemoryDb.teams.length + 1).padStart(4, '0')}`;
+      const regId = formatRegistrationId(localMemoryDb.teams.length + 1);
       const newTeam = {
         id: `team-${Date.now()}`,
         registrationId: regId,

@@ -111,7 +111,7 @@ async function runMigration() {
       }
 
       // Check if team exists in Supabase
-      const regId = t.registrationId || t.registrationNumber || `VC2026-0001`;
+      const regId = t.registrationId || t.registrationNumber || `VORTEX001`;
       const { data: existingTeam } = await supabase
         .from('teams')
         .select('id')

@@ -10,6 +10,8 @@ const DEFAULT_SETTINGS = {
   maxTeams: 30,
   registrationOpen: true,
   registrationStatus: "open",
+  tournamentDate: "2026-09-06",
+  tournamentStartTime: "18:00",
   paymentQrUrl: "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=upi://pay?pa=dstamilgaming@upi&pn=DSTamilGaming&am=100&cu=INR&tn=VORTEX_CLASH_2026",
   paymentInstructions: "1. Scan the QR code using GPay, PhonePe, or Paytm.\n2. Pay the registration fee of ₹100.\n3. Take a clear screenshot of the successful transaction.\n4. Upload the payment screenshot in the registration form below.",
   whatsappLink: "https://chat.whatsapp.com/invite/VortexClash2026",
@@ -47,18 +49,18 @@ function getRegistrationStatusText(settings = DEFAULT_SETTINGS) {
 const DEFAULT_SPONSORS = [
   {
     id: "sp-1",
-    name: "TITAN GEAR ESPORTS",
-    role: "Title Sponsor & Official Hardware Partner",
-    description: "Equipping champions with ultra-low latency mechanical keyboards, high-DPI optical mice, and pro headsets.",
+    name: "RDX ESPORTS",
+    role: "Official Sponsor",
+    description: "Premium esports partner for VORTEX CLASH 2026.",
     logoUrl: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=300&q=80",
     profileLink: "#",
     orderIndex: 1
   },
   {
     id: "sp-2",
-    name: "VORTEX ENERGY",
-    role: "Official Energy Drink Partner",
-    description: "Maximum focus, zero crash. Formulated specifically for competitive esports athletes and long tournament grinds.",
+    name: "FAIZ 777",
+    role: "Official Partner",
+    description: "Community-first esports support and tournament activations.",
     logoUrl: "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=300&q=80",
     profileLink: "#",
     orderIndex: 2
@@ -123,6 +125,58 @@ function calculateTimeLeft(targetIso) {
   const minutes = Math.floor((diff / 1000 / 60) % 60);
   const seconds = Math.floor((diff / 1000) % 60);
   return { total: diff, days, hours, minutes, seconds };
+}
+
+function getTournamentStartIso(settings = DEFAULT_SETTINGS) {
+  const dateText = settings.tournamentDate || DEFAULT_SETTINGS.tournamentDate;
+  const timeText = settings.tournamentStartTime || DEFAULT_SETTINGS.tournamentStartTime;
+  if (!dateText || !timeText) return null;
+  const isoCandidate = `${dateText}T${timeText}:00`;
+  const isoDate = new Date(isoCandidate);
+  return Number.isNaN(isoDate.getTime()) ? null : isoDate.toISOString();
+}
+
+function formatRegistrationId(sequenceNumber) {
+  return `VORTEX${String(Number(sequenceNumber || 1)).padStart(3, '0')}`;
+}
+
+function CountdownDisplay({ settings }) {
+  const targetIso = getTournamentStartIso(settings);
+  const [timeLeft, setTimeLeft] = useState(targetIso ? calculateTimeLeft(targetIso) : { total: 0, days: 0, hours: 0, minutes: 0, seconds: 0 });
+
+  useEffect(() => {
+    if (!targetIso) return undefined;
+    const update = () => setTimeLeft(calculateTimeLeft(targetIso));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [targetIso]);
+
+  if (!targetIso) {
+    return null;
+  }
+
+  const hasStarted = timeLeft.total <= 0;
+  const countdownText = hasStarted ? 'TOURNAMENT STARTED' : 'TOURNAMENT STARTS IN';
+
+  return (
+    <div className="mt-4 inline-flex flex-col gap-2 rounded-xl border border-supabase/30 bg-neutral-950/80 px-4 py-3 shadow-lg shadow-supabase/5">
+      <div className="text-[10px] uppercase tracking-[0.22em] text-supabase font-mono font-bold">{countdownText}</div>
+      {!hasStarted ? (
+        <div className="flex flex-wrap items-center gap-2 text-lg sm:text-2xl font-black text-white font-mono">
+          <span className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1">{String(timeLeft.days).padStart(2,'0')}d</span>
+          <span className="text-neutral-500">:</span>
+          <span className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1">{String(timeLeft.hours).padStart(2,'0')}h</span>
+          <span className="text-neutral-500">:</span>
+          <span className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1">{String(timeLeft.minutes).padStart(2,'0')}m</span>
+          <span className="text-neutral-500">:</span>
+          <span className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1">{String(timeLeft.seconds).padStart(2,'0')}s</span>
+        </div>
+      ) : (
+        <div className="text-lg sm:text-2xl font-black text-amber-300 font-mono">00 : 00 : 00 : 00</div>
+      )}
+    </div>
+  );
 }
 
 // =========================================================================
@@ -646,6 +700,8 @@ function HomePage({ settings, teams, totalRegistered, maxCapacity, isRegistratio
               {statusText}
             </div>
 
+            <CountdownDisplay settings={settings} />
+
             <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
               VORTEX CLASH <span className="text-supabase">2026</span>
             </h1>
@@ -850,7 +906,7 @@ function TournamentPage({ settings, totalRegistered, maxCapacity, isRegistration
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-medium">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-medium">
             <a
               href={settings.whatsappLink}
               target="_blank"
@@ -873,6 +929,19 @@ function TournamentPage({ settings, totalRegistered, maxCapacity, isRegistration
               <div className="flex items-center gap-3">
                 <i data-lucide="messages-square" className="w-5 h-5 text-indigo-400"></i>
                 <span>Join Discord Server</span>
+              </div>
+              <i data-lucide="external-link" className="w-4 h-4 text-neutral-500"></i>
+            </a>
+
+            <a
+              href="https://youtube.com/@dstamilyt6844?si=MClLoDAJ-Tsl0DE3"
+              target="_blank"
+              rel="noreferrer"
+              className="supabase-card p-4 flex items-center justify-between hover:border-red-500/40"
+            >
+              <div className="flex items-center gap-3">
+                <i data-lucide="play-circle" className="w-5 h-5 text-red-400"></i>
+                <span>DS TAMIL YT</span>
               </div>
               <i data-lucide="external-link" className="w-4 h-4 text-neutral-500"></i>
             </a>
@@ -1184,10 +1253,11 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
   const [agreedRules, setAgreedRules] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [registeredResult, setRegisteredResult] = useState(null);
+  const [showPassView, setShowPassView] = useState(false);
 
   const [formData, setFormData] = useState({
     teamName: '',
-    teamLogo: PRESET_CRESTS[0].url,
+    teamLogo: '',
     teamLeader: '',
     phoneNumber: '',
     whatsappNumber: '',
@@ -1270,6 +1340,106 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
     }
   };
 
+  const renderPassCard = (passTeam) => {
+    const members = [passTeam.player1, passTeam.player2, passTeam.player3, passTeam.player4].filter(Boolean);
+    const timestamp = passTeam.registeredAt || passTeam.createdAt || new Date().toISOString();
+
+    return (
+      <div className="relative w-full max-w-xl mx-auto overflow-hidden rounded-[28px] border border-red-500/40 bg-[#0a0a0a] text-white shadow-[0_0_0_1px_rgba(255,255,255,0.05),0_25px_80px_rgba(239,68,68,0.18)]">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(239,68,68,0.18),_transparent_55%)]"></div>
+        <div className="relative p-4 sm:p-6">
+          <div className="flex items-center justify-between border-b border-neutral-700 pb-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-red-400 font-mono">VORTEX CLASH</div>
+              <div className="text-xl sm:text-3xl font-black tracking-tight">{settings.tournamentName || 'VORTEX CLASH 2026'}</div>
+            </div>
+            <div className="rounded-full border border-red-500/40 bg-red-500/10 px-3 py-1 text-[10px] font-mono uppercase text-red-300">Pass</div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-[1.4fr_0.8fr] items-start">
+            <div className="space-y-4">
+              <div className="rounded-xl border border-neutral-700 bg-neutral-950/60 p-4">
+                <div className="text-[10px] uppercase tracking-[0.2em] text-neutral-400 font-mono">Registration ID</div>
+                <div className="mt-2 text-2xl font-black font-mono text-red-400">{passTeam.registrationId}</div>
+              </div>
+
+              <div className="space-y-2 text-xs text-neutral-300">
+                <div className="flex justify-between border-b border-neutral-800 pb-2"><span className="text-neutral-400">Team</span><span className="font-semibold text-white">{passTeam.teamName}</span></div>
+                <div className="flex justify-between border-b border-neutral-800 pb-2"><span className="text-neutral-400">Leader</span><span className="font-semibold text-white">{passTeam.teamLeader}</span></div>
+                <div className="flex justify-between border-b border-neutral-800 pb-2"><span className="text-neutral-400">Phone</span><span className="font-semibold text-white">{passTeam.phoneNumber}</span></div>
+                <div className="flex justify-between border-b border-neutral-800 pb-2"><span className="text-neutral-400">Registered</span><span className="font-semibold text-white">{new Date(timestamp).toLocaleString()}</span></div>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-neutral-700 bg-neutral-950/60 p-4 md:min-h-[220px]">
+              <div className="flex h-18 w-18 items-center justify-center rounded-full border border-neutral-700 bg-white p-2">
+                <div className="h-12 w-12 rounded-full bg-[radial-gradient(circle,_#ffffff_0%,_#f3f4f6_35%,_#d1d5db_100%)]"></div>
+              </div>
+              <div className="mt-2 text-center text-[10px] uppercase tracking-[0.22em] text-neutral-400 font-mono">QR CODE</div>
+              <div className="h-28 w-28 bg-white p-2">
+                <div className="h-full w-full bg-[linear-gradient(90deg,_#000_50%,_#fff_50%)]"></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-xl border border-neutral-700 bg-neutral-950/60 p-4">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-neutral-400 font-mono">Roster</div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-white">
+              {members.map((member, idx) => (
+                <div key={`${member}-${idx}`} className="rounded border border-neutral-700 bg-neutral-900 px-2 py-1.5">{member}</div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button onClick={() => {
+              const printWindow = window.open('', '_blank', 'width=900,height=1100');
+              if (!printWindow) return;
+              const html = `<!doctype html><html><head><title>Ticket Pass</title><style>body{margin:0;display:flex;align-items:center;justify-content:center;background:#0a0a0a;font-family:Arial,sans-serif;color:white} .wrap{width:820px;padding:24px;border-radius:20px;border:1px solid rgba(239,68,68,0.4);background:#0a0a0a;box-shadow:0 0 0 1px rgba(255,255,255,0.05);} .head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #404040;padding-bottom:12px} .title{font-size:28px;font-weight:900;letter-spacing:1px} .badge{padding:6px 12px;border:1px solid rgba(239,68,68,0.5);border-radius:999px;color:#fca5a5;background:rgba(239,68,68,0.08);font-size:10px;letter-spacing:2px} .inner{display:grid;grid-template-columns:1.5fr 0.7fr;gap:18px;margin-top:18px} .card{border:1px solid #404040;border-radius:14px;padding:16px;background:#111827} .label{font-size:10px;letter-spacing:2px;color:#9ca3af;text-transform:uppercase} .id{font-size:26px;font-weight:900;color:#fca5a5;font-family:monospace} .row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #404040;font-size:12px} .qr{display:flex;align-items:center;justify-content:center;height:170px;border:1px solid #404040;border-radius:14px;background:#fff} .qr-box{width:120px;height:120px;background:repeating-linear-gradient(90deg,#000 0,#000 16px,#fff 16px,#fff 32px),repeating-linear-gradient(#000 0,#000 16px,#fff 16px,#fff 32px);background-blend-mode:multiply;opacity:0.9;border:8px solid #fff}</style></head><body><div class='wrap'>${document.querySelector('[data-pass-ticket]').outerHTML}</div></body></html>`;
+              printWindow.document.write(html);
+              printWindow.document.close();
+              printWindow.focus();
+              setTimeout(() => printWindow.print(), 400);
+            }} className="flex-1 rounded-lg border border-neutral-700 bg-neutral-900 px-3 py-2 text-xs font-semibold text-white">Print Pass</button>
+            <button onClick={() => {
+              if (!window.jspdf) {
+                alert('PDF library unavailable in this browser.');
+                return;
+              }
+              const { jsPDF } = window.jspdf;
+              const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+              pdf.setFillColor(10, 10, 10);
+              pdf.rect(0, 0, 595, 842, 'F');
+              pdf.setTextColor(255, 255, 255);
+              pdf.setFont('helvetica', 'bold');
+              pdf.setFontSize(20);
+              pdf.text(settings.tournamentName || 'VORTEX CLASH 2026', 40, 56);
+              pdf.setFontSize(12);
+              pdf.setTextColor(239, 68, 68);
+              pdf.text(passTeam.registrationId, 40, 84);
+              pdf.setTextColor(255, 255, 255);
+              pdf.setFontSize(14);
+              pdf.text(passTeam.teamName, 40, 120);
+              pdf.text('Leader: ' + passTeam.teamLeader, 40, 150);
+              pdf.text('Phone: ' + passTeam.phoneNumber, 40, 176);
+              pdf.text('Registered: ' + new Date(passTeam.registeredAt || passTeam.createdAt || Date.now()).toLocaleString(), 40, 202);
+              pdf.setDrawColor(239, 68, 68);
+              pdf.rect(40, 220, 520, 170, 'S');
+              pdf.setFontSize(11);
+              let y = 250;
+              [passTeam.player1, passTeam.player2, passTeam.player3, passTeam.player4].filter(Boolean).forEach((member) => {
+                pdf.text('- ' + member, 60, y);
+                y += 24;
+              });
+              pdf.text('Generated by Vortex Clash 2026', 40, 620);
+              pdf.save(`${passTeam.registrationId || 'ticket'}-pass.pdf`);
+            }} className="flex-1 rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white">Download Pass as PDF</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const teamToDisplay = registeredResult || myTeam;
 
   if (hasExistingRegistration && !registeredResult && teamToDisplay) {
@@ -1326,7 +1496,7 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
     const matchTimeText = getMatchStartText();
 
     return (
-      <div className="supabase-card max-w-md mx-auto p-6 space-y-6 text-center">
+      <div className="supabase-card max-w-3xl mx-auto p-6 space-y-6 text-center">
         <div className="w-12 h-12 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-supabase mx-auto">
           <i data-lucide="check" className="w-6 h-6"></i>
         </div>
@@ -1337,37 +1507,49 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
           <p className="text-xs text-neutral-400 mt-1 font-mono">{registeredResult.registrationId}</p>
         </div>
 
-        <div className="p-4 rounded-lg bg-neutral-950 border border-neutral-800 text-left space-y-3 text-xs">
-          <div className="flex items-center gap-3 border-b border-neutral-800 pb-3">
-            <img src={registeredResult.teamLogo} alt="" className="w-10 h-10 rounded-lg object-cover" />
-            <div>
-              <div className="font-bold text-white text-sm">{registeredResult.teamName}</div>
-              <div className="text-neutral-400">Captain: {registeredResult.teamLeader}</div>
+        {!showPassView ? (
+          <>
+            <div className="p-4 rounded-lg bg-neutral-950 border border-neutral-800 text-left space-y-3 text-xs">
+              <div className="flex items-center gap-3 border-b border-neutral-800 pb-3">
+                <img src={registeredResult.teamLogo || ''} alt="" className="w-10 h-10 rounded-lg object-cover" />
+                <div>
+                  <div className="font-bold text-white text-sm">{registeredResult.teamName}</div>
+                  <div className="text-neutral-400">Captain: {registeredResult.teamLeader}</div>
+                </div>
+              </div>
+
+              <div className="space-y-2 text-neutral-300">
+                <div><span className="text-neutral-500">Team Name:</span> {registeredResult.teamName}</div>
+                <div><span className="text-neutral-500">Team ID:</span> {registeredResult.registrationId}</div>
+                <div><span className="text-neutral-500">Match Start:</span> {matchTimeText}</div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-neutral-300 pt-2 border-t border-neutral-800">
+                <div>P1: {registeredResult.player1}</div>
+                <div>P2: {registeredResult.player2}</div>
+                <div>P3: {registeredResult.player3}</div>
+                <div>P4: {registeredResult.player4}</div>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={() => setShowPassView(true)} className="flex-1 py-2 rounded-lg btn-primary text-xs font-semibold">
+                View Pass
+              </button>
+              <button onClick={() => window.location.reload()} className="flex-1 py-2 rounded-lg btn-secondary text-xs font-medium">
+                Done
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="space-y-4">
+            <div data-pass-ticket>{renderPassCard(registeredResult)}</div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowPassView(false)} className="flex-1 py-2 rounded-lg btn-secondary text-xs font-medium">Back</button>
+              <button onClick={() => window.location.reload()} className="flex-1 py-2 rounded-lg btn-primary text-xs font-semibold">Done</button>
             </div>
           </div>
-
-          <div className="space-y-2 text-neutral-300">
-            <div><span className="text-neutral-500">Team Name:</span> {registeredResult.teamName}</div>
-            <div><span className="text-neutral-500">Team ID:</span> {registeredResult.registrationId}</div>
-            <div><span className="text-neutral-500">Match Start:</span> {matchTimeText}</div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-neutral-300 pt-2 border-t border-neutral-800">
-            <div>P1: {registeredResult.player1}</div>
-            <div>P2: {registeredResult.player2}</div>
-            <div>P3: {registeredResult.player3}</div>
-            <div>P4: {registeredResult.player4}</div>
-          </div>
-        </div>
-
-        <div className="flex gap-2">
-          <button onClick={() => window.print()} className="flex-1 py-2 rounded-lg btn-secondary text-xs font-medium">
-            Print Pass
-          </button>
-          <button onClick={() => window.location.reload()} className="flex-1 py-2 rounded-lg btn-primary text-xs font-semibold">
-            Done
-          </button>
-        </div>
+        )}
       </div>
     );
   }
@@ -2284,6 +2466,26 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className="text-neutral-400 block mb-1">Tournament Date</label>
+              <input
+                type="date"
+                value={settingsForm.tournamentDate || '2026-09-06'}
+                onChange={(e) => setSettingsForm({ ...settingsForm, tournamentDate: e.target.value })}
+                className="w-full p-2 input-supabase text-xs"
+              />
+            </div>
+            <div>
+              <label className="text-neutral-400 block mb-1">Start Time</label>
+              <input
+                type="time"
+                value={settingsForm.tournamentStartTime || '18:00'}
+                onChange={(e) => setSettingsForm({ ...settingsForm, tournamentStartTime: e.target.value })}
+                className="w-full p-2 input-supabase text-xs"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <label className="text-neutral-400 block mb-1">Max Teams</label>
               <input
                 type="number"
@@ -2320,6 +2522,15 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
               <option value="closed">CLOSED</option>
               <option value="coming_soon">COMING SOON</option>
             </select>
+          </div>
+          <div>
+            <label className="text-neutral-400 block mb-1">Payment QR URL</label>
+            <input
+              type="text"
+              value={settingsForm.paymentQrUrl || ''}
+              onChange={(e) => setSettingsForm({ ...settingsForm, paymentQrUrl: e.target.value })}
+              className="w-full p-2 input-supabase text-xs"
+            />
           </div>
           <button type="submit" className="w-full py-2 rounded-lg btn-primary text-xs font-semibold">
             Save Settings
