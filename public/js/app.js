@@ -62,7 +62,7 @@ async function fetchWithTimeout(url, options = {}, timeout = 8000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
+    const res = await fetch(url, { credentials: 'same-origin', ...options, signal: controller.signal });
     clearTimeout(timer);
     return res;
   } catch (err) {
@@ -2313,6 +2313,7 @@ function AdminLoginModal({ onClose, onSuccess, showToast }) {
     const res = await fetch('/api/admin/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
       body: JSON.stringify({ username, password })
     });
     const data = await res.json();
@@ -2322,8 +2323,8 @@ function AdminLoginModal({ onClose, onSuccess, showToast }) {
       return;
     }
 
-    setError(data.error || data.message || 'Invalid email or password.');
-    showToast(data.error || data.message || 'Invalid email or password.', 'error');
+    setError(data.error || data.message || 'Invalid username or password.');
+    showToast(data.error || data.message || 'Invalid username or password.', 'error');
   };
 
   return (
