@@ -201,6 +201,7 @@ const defaultState = {
     registrationFee: "₹100",
     maxTeams: 30,
     registrationOpen: true,
+    registrationStatus: "open",
     paymentQrUrl: "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=upi://pay?pa=dstamilgaming@upi&pn=DSTamilGaming&am=100&cu=INR&tn=VORTEX_CLASH_2026",
     paymentInstructions: "1. Scan the QR code using GPay, PhonePe, or Paytm.\n2. Pay the registration fee of ₹100.\n3. Take a clear screenshot of the successful transaction.\n4. Upload the payment screenshot in the registration form below.",
     whatsappLink: "https://chat.whatsapp.com/invite/VortexClash2026",
@@ -258,12 +259,24 @@ const defaultState = {
 
 let localMemoryDb = JSON.parse(JSON.stringify(defaultState));
 
+const VALID_REGISTRATION_STATUSES = new Set(['open', 'closed', 'coming_soon']);
+
+function normalizeRegistrationStatus(settings = {}) {
+  if (VALID_REGISTRATION_STATUSES.has(settings.registrationStatus)) return settings.registrationStatus;
+  return settings.registrationOpen === false ? 'closed' : 'open';
+}
+
+function withNormalizedRegistrationStatus(settings = {}) {
+  const registrationStatus = normalizeRegistrationStatus(settings);
+  return { ...settings, registrationStatus, registrationOpen: registrationStatus === 'open' };
+}
+
 // Load pre-existing data from database.json if available
 try {
   const jsonPath = path.join(__dirname, 'data', 'database.json');
   if (fs.existsSync(jsonPath)) {
     const parsed = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-    if (parsed.settings) localMemoryDb.settings = parsed.settings;
+    if (parsed.settings) localMemoryDb.settings = withNormalizedRegistrationStatus(parsed.settings);
     if (parsed.sponsors) localMemoryDb.sponsors = parsed.sponsors;
     if (parsed.rules) localMemoryDb.rules = parsed.rules;
     if (parsed.teams) localMemoryDb.teams = parsed.teams;
@@ -480,20 +493,30 @@ app.get('/api/health', (req, res) => {
 app.get('/api/settings', async (req, res) => {
   try {
     const dbSettings = await getSettingsFromDb();
-    const settings = dbSettings || localMemoryDb.settings;
+    const settings = withNormalizedRegistrationStatus(dbSettings || localMemoryDb.settings);
     res.json({ success: true, settings });
   } catch (err) {
     console.error('[DATABASE ERROR] /api/settings:', err.message);
-    res.json({ success: true, settings: localMemoryDb.settings });
+    res.json({ success: true, settings: withNormalizedRegistrationStatus(localMemoryDb.settings) });
   }
 });
 
 app.post('/api/settings', requireAdmin, async (req, res) => {
   try {
-    const current = (await getSettingsFromDb()) || localMemoryDb.settings;
-    const newSettings = { ...current, ...req.body };
+    const current = withNormalizedRegistrationStatus((await getSettingsFromDb()) || localMemoryDb.settings);
+    const requestedStatus = req.body?.registrationStatus;
+    if (!VALID_REGISTRATION_STATUSES.has(requestedStatus)) {
+      return res.status(400).json({ success: false, error: 'registrationStatus must be open, closed, or coming_soon.' });
+    }
+    const newSettings = withNormalizedRegistrationStatus({ ...current, ...req.body });
     await saveSettingsToDb(newSettings);
     localMemoryDb.settings = newSettings;
+    if (!isSupabaseConfigured) {
+      const jsonPath = path.join(__dirname, 'data', 'database.json');
+      const persistedState = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+      persistedState.settings = newSettings;
+      fs.writeFileSync(jsonPath, JSON.stringify(persistedState, null, 2));
+    }
     res.json({ success: true, settings: newSettings });
   } catch (err) {
     console.error('[DATABASE ERROR] POST /api/settings:', err.message);
@@ -506,7 +529,7 @@ app.get('/api/teams', async (req, res) => {
   try {
     const dbTeams = await getTeamsFromDb();
     const teams = dbTeams !== null ? dbTeams : localMemoryDb.teams;
-    const settings = (await getSettingsFromDb()) || localMemoryDb.settings;
+    const settings = withNormalizedRegistrationStatus((await getSettingsFromDb()) || localMemoryDb.settings);
     const maxTeams = Number(settings.maxTeams || process.env.MAX_TEAMS || 30);
     const isAdmin = req.session && req.session.role === 'admin';
 
@@ -540,10 +563,10 @@ app.post('/api/teams', async (req, res) => {
     const settings = (await getSettingsFromDb()) || localMemoryDb.settings;
     const maxTeams = Number(settings.maxTeams || process.env.MAX_TEAMS || 30);
 
-    if (settings.registrationOpen === false) {
+    if (settings.registrationStatus !== 'open') {
       return res.status(400).json({
         success: false,
-        error: "Tournament registration is currently closed."
+        message: settings.registrationStatus === 'coming_soon' ? 'Registration is coming soon.' : 'Registration is currently closed.'
       });
     }
 
@@ -1280,14 +1303,15 @@ app.post('/api/bracket/arrange', requireAdmin, async (req, res) => {
 app.get('/api/live-sync', async (req, res) => {
   try {
     const teams = (await getTeamsFromDb()) || localMemoryDb.teams || [];
-    const settings = (await getSettingsFromDb()) || localMemoryDb.settings || {};
+    const settings = withNormalizedRegistrationStatus((await getSettingsFromDb()) || localMemoryDb.settings || {});
     const bracket = (await getBracketFromDb()) || localMemoryDb.bracket || {};
 
     res.json({
       success: true,
       totalTeams: teams.length,
       maxTeams: settings.maxTeams || 30,
-      registrationOpen: settings.registrationOpen !== false,
+      registrationStatus: settings.registrationStatus,
+      registrationOpen: settings.registrationStatus === 'open',
       bracketStatus: bracket.status || 'UNPUBLISHED',
       championTeamId: bracket.championTeamId || null,
       timestamp: Date.now()

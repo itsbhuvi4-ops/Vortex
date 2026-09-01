@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS = {
   registrationFee: "₹100",
   maxTeams: 30,
   registrationOpen: true,
+  registrationStatus: "open",
   paymentQrUrl: "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=upi://pay?pa=dstamilgaming@upi&pn=DSTamilGaming&am=100&cu=INR&tn=VORTEX_CLASH_2026",
   paymentInstructions: "1. Scan the QR code using GPay, PhonePe, or Paytm.\n2. Pay the registration fee of ₹100.\n3. Take a clear screenshot of the successful transaction.\n4. Upload the payment screenshot in the registration form below.",
   whatsappLink: "https://chat.whatsapp.com/invite/VortexClash2026",
@@ -16,6 +17,32 @@ const DEFAULT_SETTINGS = {
   importantDates: "Registration Closes: 05 September 2026 | Bracket Announcement: 05 September 2026, 9:00 PM | Tournament Kickoff: 06 September 2026, 6:00 PM",
   instructions: "All team leaders must join the official WhatsApp and Discord communities. Teams must be ready in the custom room 15 minutes prior to match schedule. Fair play and sportsmanship are strictly enforced."
 };
+
+const VALID_REGISTRATION_STATUSES = new Set(['open', 'closed', 'coming_soon']);
+const REGISTRATION_STATUS_LABELS = {
+  open: 'REGISTRATION OPEN',
+  closed: 'REGISTRATION CLOSED',
+  coming_soon: 'REGISTRATION COMING SOON'
+};
+
+function normalizeRegistrationStatus(settings = {}) {
+  if (settings && VALID_REGISTRATION_STATUSES.has(settings.registrationStatus)) return settings.registrationStatus;
+  if (settings && settings.registrationOpen === false) return 'closed';
+  return 'open';
+}
+
+function normalizeSettingsPayload(settings = {}) {
+  const normalizedStatus = normalizeRegistrationStatus(settings);
+  return {
+    ...settings,
+    registrationStatus: normalizedStatus,
+    registrationOpen: normalizedStatus === 'open'
+  };
+}
+
+function getRegistrationStatusText(settings = DEFAULT_SETTINGS) {
+  return REGISTRATION_STATUS_LABELS[normalizeRegistrationStatus(settings)] || 'REGISTRATION OPEN';
+}
 
 const DEFAULT_SPONSORS = [
   {
@@ -144,7 +171,7 @@ function App() {
       const [sRes, tRes, spRes, rRes, bRes] = results;
 
       if (sRes.status === 'fulfilled' && sRes.value?.success && sRes.value?.settings) {
-        setSettings(sRes.value.settings);
+        setSettings(normalizeSettingsPayload(sRes.value.settings));
       }
       if (tRes.status === 'fulfilled' && tRes.value?.success && tRes.value?.teams) {
         setTeams(tRes.value.teams);
@@ -263,24 +290,11 @@ function App() {
 
     bootstrap();
 
-    // Sensible polling interval for live sync (15s) with timeout to prevent duplicate calls (TASK 10)
+    // Single background sync loop: refresh the live settings and current public data without excessive polling.
     const interval = setInterval(() => {
-      fetchWithTimeout('/api/live-sync', {}, 5000)
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (data?.success && isMounted) {
-            fetchWithTimeout('/api/bracket', {}, 5000)
-              .then(r => r.ok ? r.json() : null)
-              .then(b => { if (b?.success && isMounted) setBracketData(b); })
-              .catch(() => {});
-            fetchWithTimeout('/api/teams', {}, 5000)
-              .then(r => r.ok ? r.json() : null)
-              .then(t => { if (t?.success && isMounted) setTeams(t.teams); })
-              .catch(() => {});
-          }
-        })
-        .catch(() => {});
-    }, 15000);
+      if (!isMounted) return;
+      fetchData();
+    }, 20000);
 
     return () => {
       isMounted = false;
@@ -297,9 +311,11 @@ function App() {
   });
 
   const totalRegistered = teams.length;
-  const currentSettings = settings || DEFAULT_SETTINGS;
+  const currentSettings = normalizeSettingsPayload(settings || DEFAULT_SETTINGS);
+  const registrationStatus = normalizeRegistrationStatus(currentSettings);
   const maxCapacity = currentSettings ? currentSettings.maxTeams : 30;
-  const isRegistrationFull = totalRegistered >= maxCapacity || (currentSettings && !currentSettings.registrationOpen);
+  const isRegistrationOpen = registrationStatus === 'open';
+  const isRegistrationFull = totalRegistered >= maxCapacity || !isRegistrationOpen;
   const hasExistingRegistration = !!myTeam;
 
   const handleChatSubmit = (e) => {
@@ -609,6 +625,10 @@ function App() {
 // 1. HOME PAGE COMPONENT
 // =========================================================================
 function HomePage({ settings, teams, totalRegistered, maxCapacity, isRegistrationFull, sponsors, rules, setActiveTab, hasExistingRegistration }) {
+  const registrationStatus = normalizeRegistrationStatus(settings || DEFAULT_SETTINGS);
+  const statusText = getRegistrationStatusText(settings || DEFAULT_SETTINGS);
+  const registrationDisabled = registrationStatus !== 'open';
+
   return (
     <div className="space-y-12">
       
@@ -620,6 +640,10 @@ function HomePage({ settings, teams, totalRegistered, maxCapacity, isRegistratio
             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-supabase text-xs font-mono">
               <span className="w-1.5 h-1.5 rounded-full bg-supabase"></span>
               <span>DS TAMIL GAMING PRESENTS</span>
+            </div>
+
+            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-mono border ${registrationStatus === 'open' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : registrationStatus === 'coming_soon' ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300'}`}>
+              {statusText}
             </div>
 
             <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
@@ -649,16 +673,18 @@ function HomePage({ settings, teams, totalRegistered, maxCapacity, isRegistratio
             {/* CTAs */}
             <div className="flex flex-wrap gap-3 pt-2">
               <button
-                disabled={isRegistrationFull}
+                disabled={registrationDisabled || isRegistrationFull}
                 onClick={() => setActiveTab('register')}
                 className={`px-5 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
-                  isRegistrationFull
+                  registrationDisabled || isRegistrationFull
                     ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
                     : 'btn-primary'
                 }`}
               >
                 <i data-lucide="user-plus" className="w-4 h-4"></i>
-                <span>{isRegistrationFull ? 'Registration Full' : 'Register Squad'}</span>
+                <span>
+                  {registrationStatus === 'closed' ? 'REGISTRATION CLOSED' : registrationStatus === 'coming_soon' ? 'REGISTRATION COMING SOON' : 'Register Squad'}
+                </span>
               </button>
 
               <button
@@ -776,6 +802,8 @@ function HomePage({ settings, teams, totalRegistered, maxCapacity, isRegistratio
 // 2. TOURNAMENT PAGE
 // =========================================================================
 function TournamentPage({ settings, totalRegistered, maxCapacity, isRegistrationFull, setActiveTab, hasExistingRegistration }) {
+  const registrationStatus = normalizeRegistrationStatus(settings || DEFAULT_SETTINGS);
+  const statusText = getRegistrationStatusText(settings || DEFAULT_SETTINGS);
   return (
     <div className="space-y-8 max-w-4xl mx-auto">
       <div className="space-y-1">
@@ -799,8 +827,8 @@ function TournamentPage({ settings, totalRegistered, maxCapacity, isRegistration
             </div>
             <div className="flex justify-between">
               <span className="text-neutral-400">Status</span>
-              <span className={isRegistrationFull ? 'text-rose-400' : 'text-supabase'}>
-                {isRegistrationFull ? 'Closed' : 'Open'}
+              <span className={registrationStatus === 'open' ? 'text-supabase' : registrationStatus === 'coming_soon' ? 'text-amber-300' : 'text-rose-400'}>
+                {statusText}
               </span>
             </div>
           </div>
@@ -1150,6 +1178,8 @@ function RulesPage({ rules, setActiveTab }) {
 // 6. STREAMLINED REGISTRATION PAGE (Clean & Focused)
 // =========================================================================
 function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity, isRegistrationFull, showToast, onRegisterSuccess, hasExistingRegistration, authUser, onAuthChange, myTeam }) {
+  const registrationStatus = normalizeRegistrationStatus(settings || DEFAULT_SETTINGS);
+  const registrationStatusText = getRegistrationStatusText(settings || DEFAULT_SETTINGS);
   const [step, setStep] = useState(1);
   const [agreedRules, setAgreedRules] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -1194,6 +1224,10 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
   };
 
   const handleSubmit = async () => {
+    if (registrationStatus !== 'open') {
+      showToast(registrationStatus === 'coming_soon' ? 'Registration is coming soon.' : 'Registration is currently closed.', 'error');
+      return;
+    }
     if (!formData.teamName || !formData.teamLeader || !formData.phoneNumber || !formData.whatsappNumber) {
       showToast("Please fill in all squad details", "error");
       return;
@@ -1274,11 +1308,15 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
     );
   }
 
-  if (isRegistrationFull && step !== 5) {
+  if (registrationStatus !== 'open' && step !== 5) {
     return (
       <div className="supabase-card max-w-md mx-auto p-8 text-center space-y-3 my-8">
-        <h2 className="text-lg font-bold text-white">Registration Closed</h2>
-        <p className="text-xs text-neutral-400">All {maxCapacity} slots have been registered.</p>
+        <h2 className="text-lg font-bold text-white">{registrationStatusText}</h2>
+        <p className="text-xs text-neutral-400">
+          {registrationStatus === 'coming_soon'
+            ? 'Registration will open soon. Please check back later.'
+            : isRegistrationFull ? `All ${maxCapacity} slots have been registered.` : 'New registrations are currently disabled.'}
+        </p>
       </div>
     );
   }
@@ -2264,15 +2302,25 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
               />
             </div>
           </div>
-          <label className="flex items-center gap-2 cursor-pointer pt-2">
-            <input
-              type="checkbox"
-              checked={settingsForm.registrationOpen}
-              onChange={(e) => setSettingsForm({ ...settingsForm, registrationOpen: e.target.checked })}
-              className="accent-emerald-500 rounded"
-            />
-            <span className="text-white">Registration Open to Public</span>
-          </label>
+          <div>
+            <label className="text-neutral-400 block mb-2">Registration Status</label>
+            <select
+              value={settingsForm.registrationStatus || normalizeRegistrationStatus(settingsForm)}
+              onChange={(e) => {
+                const nextStatus = e.target.value;
+                setSettingsForm({
+                  ...settingsForm,
+                  registrationStatus: nextStatus,
+                  registrationOpen: nextStatus === 'open'
+                });
+              }}
+              className="w-full p-2 input-supabase text-xs"
+            >
+              <option value="open">OPEN</option>
+              <option value="closed">CLOSED</option>
+              <option value="coming_soon">COMING SOON</option>
+            </select>
+          </div>
           <button type="submit" className="w-full py-2 rounded-lg btn-primary text-xs font-semibold">
             Save Settings
           </button>
