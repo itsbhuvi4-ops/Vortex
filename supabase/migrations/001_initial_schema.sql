@@ -143,14 +143,17 @@ CREATE TABLE IF NOT EXISTS admins (
 -- 9. ATOMIC REGISTRATION ID HELPER FUNCTION
 -- ================================================================
 CREATE OR REPLACE FUNCTION get_next_registration_id()
-RETURNS TEXT AS $$
+RETURNS TEXT
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
 DECLARE
   next_val BIGINT;
 BEGIN
   next_val := nextval('team_reg_seq');
   RETURN 'VC2026-' || LPAD(next_val::TEXT, 4, '0');
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 -- ================================================================
 -- 10. ATOMIC TEAM INSERT FUNCTION WITH MAXIMUM CAPACITY LOCK
@@ -172,7 +175,10 @@ CREATE OR REPLACE FUNCTION register_team_atomic(
   p_user_id TEXT,
   p_max_teams INT DEFAULT 30
 )
-RETURNS JSONB AS $$
+RETURNS JSONB
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $$
 DECLARE
   current_count INT;
   new_reg_id TEXT;
@@ -255,9 +261,10 @@ ON CONFLICT (id) DO UPDATE SET
   file_size_limit = 5242880,
   allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
 
--- Storage Policies for Public Reading (Public Buckets Only)
-CREATE POLICY "Public Read Access on team-logos" ON storage.objects FOR SELECT USING (bucket_id = 'team-logos');
-CREATE POLICY "Public Read Access on sponsor-images" ON storage.objects FOR SELECT USING (bucket_id = 'sponsor-images');
+-- Public buckets rely on the bucket's public flag for direct object URLs.
+-- Broad bucket-wide SELECT policies are intentionally removed to prevent listing all objects.
+DROP POLICY IF EXISTS "Public Read Access on team-logos" ON storage.objects;
+DROP POLICY IF EXISTS "Public Read Access on sponsor-images" ON storage.objects;
 
 -- Service Role / Admin Access on Private payment-proofs
 CREATE POLICY "Admin Read Access on payment-proofs" ON storage.objects FOR SELECT USING (bucket_id = 'payment-proofs' AND (auth.role() = 'service_role' OR auth.role() = 'authenticated'));
