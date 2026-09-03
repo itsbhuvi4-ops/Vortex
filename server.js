@@ -750,9 +750,22 @@ app.delete('/api/teams/:id', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     if (isSupabaseConfigured) {
-      await deleteTeamFromDb(id);
+      const deletedTeam = await deleteTeamFromDb(id);
+      if (deletedTeam) {
+        await Promise.allSettled([
+          removeFromSupabaseStorage('payment-proofs', deletedTeam.payment_proof_url),
+          removeFromSupabaseStorage('team-logos', deletedTeam.team_logo_url)
+        ]);
+      }
     } else {
+      const deletedTeam = localMemoryDb.teams.find(t => t.id === id || t.registrationId === id);
       localMemoryDb.teams = localMemoryDb.teams.filter(t => t.id !== id && t.registrationId !== id);
+      if (deletedTeam) {
+        await Promise.allSettled([
+          removeFromSupabaseStorage('payment-proofs', deletedTeam.paymentProof),
+          removeFromSupabaseStorage('team-logos', deletedTeam.teamLogo)
+        ]);
+      }
     }
     res.json({ success: true, message: 'Team deleted successfully' });
   } catch (err) {

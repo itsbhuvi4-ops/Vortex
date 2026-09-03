@@ -281,6 +281,7 @@ function App() {
             .on('postgres_changes', { event: '*', schema: 'public', table: 'teams' }, () => {
               if (isMounted) {
                 fetchWithTimeout('/api/teams', {}, 5000).then(r => r.ok ? r.json() : null).then(t => { if (t?.success && isMounted) setTeams(t.teams); }).catch(() => {});
+                refreshUserState();
               }
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
@@ -2015,11 +2016,14 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
 
   const handleDeleteTeam = async (id) => {
     if (!confirm(`Delete team ${id}?`)) return;
-    const res = await fetch(`/api/teams/${id}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (data.success) {
+    try {
+      const res = await fetchWithTimeout(`/api/teams/${id}`, { method: 'DELETE' }, 10000);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed to delete team.');
       showToast("Team removed", "success");
-      fetchData();
+      await fetchData();
+    } catch (err) {
+      showToast(err.message || 'Failed to delete team.', 'error');
     }
   };
 
