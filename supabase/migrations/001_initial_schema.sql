@@ -185,6 +185,8 @@ DECLARE
   new_team_id UUID;
   existing_team_id UUID;
 BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('vortex_team_registration'));
+
   -- 1. Check duplicate phone or whatsapp
   SELECT id INTO existing_team_id FROM teams 
   WHERE phone = p_phone OR whatsapp = p_whatsapp OR (p_user_id IS NOT NULL AND user_id = p_user_id)
@@ -246,7 +248,7 @@ BEGIN
     'created_at', now()
   );
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 -- ================================================================
 -- 11. STORAGE BUCKETS (SUPABASE STORAGE)
@@ -255,6 +257,7 @@ INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 VALUES 
   ('team-logos', 'team-logos', true, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/jpg']),
   ('payment-proofs', 'payment-proofs', false, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/jpg']), -- PRIVATE BUCKET
+  ('payment-qr', 'payment-qr', true, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/jpg']),
   ('sponsor-images', 'sponsor-images', true, 5242880, ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/jpg'])
 ON CONFLICT (id) DO UPDATE SET
   public = EXCLUDED.public,
@@ -265,14 +268,20 @@ ON CONFLICT (id) DO UPDATE SET
 -- Broad bucket-wide SELECT policies are intentionally removed to prevent listing all objects.
 DROP POLICY IF EXISTS "Public Read Access on team-logos" ON storage.objects;
 DROP POLICY IF EXISTS "Public Read Access on sponsor-images" ON storage.objects;
+DROP POLICY IF EXISTS "Service Role Upload on team-logos" ON storage.objects;
+DROP POLICY IF EXISTS "Service Role Upload on payment-proofs" ON storage.objects;
+DROP POLICY IF EXISTS "Service Role Upload on payment-qr" ON storage.objects;
+DROP POLICY IF EXISTS "Service Role Upload on sponsor-images" ON storage.objects;
 
 -- Service Role / Admin Access on Private payment-proofs
-CREATE POLICY "Admin Read Access on payment-proofs" ON storage.objects FOR SELECT USING (bucket_id = 'payment-proofs' AND (auth.role() = 'service_role' OR auth.role() = 'authenticated'));
+DROP POLICY IF EXISTS "Admin Read Access on payment-proofs" ON storage.objects;
+CREATE POLICY "Admin Read Access on payment-proofs" ON storage.objects FOR SELECT TO service_role USING (bucket_id = 'payment-proofs');
 
 -- Service Role Upload Policies
-CREATE POLICY "Service Role Upload on team-logos" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'team-logos');
-CREATE POLICY "Service Role Upload on payment-proofs" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'payment-proofs');
-CREATE POLICY "Service Role Upload on sponsor-images" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'sponsor-images');
+CREATE POLICY "Service Role Upload on team-logos" ON storage.objects FOR INSERT TO service_role WITH CHECK (bucket_id = 'team-logos');
+CREATE POLICY "Service Role Upload on payment-proofs" ON storage.objects FOR INSERT TO service_role WITH CHECK (bucket_id = 'payment-proofs');
+CREATE POLICY "Service Role Upload on payment-qr" ON storage.objects FOR INSERT TO service_role WITH CHECK (bucket_id = 'payment-qr');
+CREATE POLICY "Service Role Upload on sponsor-images" ON storage.objects FOR INSERT TO service_role WITH CHECK (bucket_id = 'sponsor-images');
 
 -- ================================================================
 -- 12. REALTIME REPLICATION ENABLEMENT

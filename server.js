@@ -14,11 +14,13 @@ const {
   SUPABASE_URL,
   SUPABASE_ANON_KEY,
   uploadToSupabaseStorage,
+  removeFromSupabaseStorage,
   getSignedPaymentProofUrl,
   ensureAdminUserExists,
   getSettingsFromDb,
   saveSettingsToDb,
   getTeamsFromDb,
+  getTeamCountFromDb,
   registerTeamInDb,
   updateTeamInDb,
   deleteTeamFromDb,
@@ -191,6 +193,18 @@ const upload = multer({
   }
 });
 
+function parseRegistrationUpload(req, res, next) {
+  upload.fields([
+    { name: 'paymentProof', maxCount: 1 },
+    { name: 'teamLogo', maxCount: 1 }
+  ])(req, res, (err) => {
+    if (err) {
+      return res.status(400).json({ success: false, error: err.message || 'Registration image upload failed.' });
+    }
+    next();
+  });
+}
+
 // Fallback in-memory state for local development when Supabase credentials are not provided
 const defaultState = {
   settings: {
@@ -273,6 +287,10 @@ function normalizeRegistrationStatus(settings = {}) {
 function withNormalizedRegistrationStatus(settings = {}) {
   const registrationStatus = normalizeRegistrationStatus(settings);
   return { ...settings, registrationStatus, registrationOpen: registrationStatus === 'open' };
+}
+
+function parseBooleanField(value) {
+  return value === true || value === 'true' || value === '1' || value === 1;
 }
 
 // Load pre-existing data from database.json if available
@@ -534,7 +552,7 @@ app.get('/api/teams', async (req, res) => {
     const dbTeams = await getTeamsFromDb();
     const teams = dbTeams !== null ? dbTeams : localMemoryDb.teams;
     const settings = withNormalizedRegistrationStatus((await getSettingsFromDb()) || localMemoryDb.settings);
-    const maxTeams = Number(settings.maxTeams || process.env.MAX_TEAMS || 30);
+    const maxTeams = Number(settings.maxTeams ?? process.env.MAX_TEAMS ?? 30);
     const isAdmin = req.session && req.session.role === 'admin';
 
     // Protect private payment proof access (signed URLs for admin only, hidden from public)
@@ -562,15 +580,34 @@ app.get('/api/teams', async (req, res) => {
   }
 });
 
-app.post('/api/teams', async (req, res) => {
+app.post('/api/teams', parseRegistrationUpload, async (req, res) => {
+  const uploadedAssets = [];
   try {
-    const settings = (await getSettingsFromDb()) || localMemoryDb.settings;
-    const maxTeams = Number(settings.maxTeams || process.env.MAX_TEAMS || 30);
+    if (IS_VERCEL && !isSupabaseConfigured) {
+      return res.status(503).json({
+        success: false,
+        error: 'Registration is temporarily unavailable: Supabase server configuration is missing.'
+      });
+    }
+    const settings = withNormalizedRegistrationStatus((await getSettingsFromDb()) || localMemoryDb.settings);
+    const maxTeams = Number(settings.maxTeams ?? process.env.MAX_TEAMS ?? 30);
 
     if (settings.registrationStatus !== 'open') {
       return res.status(400).json({
         success: false,
         message: settings.registrationStatus === 'coming_soon' ? 'Registration is coming soon.' : 'Registration is currently closed.'
+      });
+    }
+
+    if (!Number.isFinite(maxTeams) || maxTeams < 0) {
+      return res.status(500).json({ success: false, error: 'Registration is temporarily unavailable: invalid maximum-team configuration.' });
+    }
+    const teamCount = await getTeamCountFromDb();
+    const registeredTeams = teamCount !== null ? teamCount : localMemoryDb.teams.length;
+    if (registeredTeams >= maxTeams) {
+      return res.status(400).json({
+        success: false,
+        error: 'Registration closed. Maximum team capacity reached.'
       });
     }
 
@@ -592,27 +629,37 @@ app.post('/api/teams', async (req, res) => {
       joinedWhatsapp,
       joinedDiscord
     } = req.body || {};
+    const paymentFile = req.files?.paymentProof?.[0];
+    const teamLogoFile = req.files?.teamLogo?.[0];
 
-    if (!teamName || !teamLeader || !phoneNumber || !whatsappNumber || !player1 || !player2 || !player3 || !player4 || !paymentProof) {
+    if (!teamName || !teamLeader || !phoneNumber || !whatsappNumber || !player1 || !player2 || !player3 || !player4 || (!paymentProof && !paymentFile)) {
       return res.status(400).json({
         success: false,
         error: "All required squad details, players (1-4), and payment proof must be provided."
       });
     }
+    if ((paymentProof && typeof paymentProof !== 'string') || (teamLogo && typeof teamLogo !== 'string')) {
+      return res.status(400).json({ success: false, error: 'Invalid registration image data.' });
+    }
 
     // 1. Upload Payment Proof to Supabase Storage Bucket
     let savedPaymentProof = paymentProof;
-    if (paymentProof.startsWith('data:')) {
+    if (paymentFile) {
+      savedPaymentProof = await uploadToSupabaseStorage('payment-proofs', paymentFile.buffer, `payment-${Date.now()}`, paymentFile.mimetype);
+      uploadedAssets.push({ bucket: 'payment-proofs', identifier: savedPaymentProof });
+    } else if (typeof paymentProof === 'string' && paymentProof.startsWith('data:')) {
       savedPaymentProof = await uploadToSupabaseStorage('payment-proofs', paymentProof, `payment-${Date.now()}`);
+      uploadedAssets.push({ bucket: 'payment-proofs', identifier: savedPaymentProof });
     }
 
     // 2. Upload Team Logo to Supabase Storage Bucket
     let savedTeamLogo = teamLogo;
-    if (teamLogo && teamLogo.startsWith('data:')) {
+    if (teamLogoFile) {
+      savedTeamLogo = await uploadToSupabaseStorage('team-logos', teamLogoFile.buffer, `logo-${Date.now()}`, teamLogoFile.mimetype);
+      uploadedAssets.push({ bucket: 'team-logos', identifier: savedTeamLogo });
+    } else if (typeof teamLogo === 'string' && teamLogo.startsWith('data:')) {
       savedTeamLogo = await uploadToSupabaseStorage('team-logos', teamLogo, `logo-${Date.now()}`);
-    }
-    if (!savedTeamLogo) {
-      savedTeamLogo = "https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&w=200&q=80";
+      uploadedAssets.push({ bucket: 'team-logos', identifier: savedTeamLogo });
     }
 
     const payload = {
@@ -627,8 +674,8 @@ app.post('/api/teams', async (req, res) => {
       substitute: substitute ? String(substitute).trim() : "",
       teamLogo: savedTeamLogo,
       paymentProof: savedPaymentProof,
-      joinedWhatsapp: !!joinedWhatsapp,
-      joinedDiscord: !!joinedDiscord,
+      joinedWhatsapp: parseBooleanField(joinedWhatsapp),
+      joinedDiscord: parseBooleanField(joinedDiscord),
       userId: sessionUserId
     };
 
@@ -636,6 +683,7 @@ app.post('/api/teams', async (req, res) => {
     if (isSupabaseConfigured) {
       const regResult = await registerTeamInDb(payload, maxTeams);
       if (!regResult.success) {
+        await Promise.allSettled(uploadedAssets.map(asset => removeFromSupabaseStorage(asset.bucket, asset.identifier)));
         return res.status(regResult.full ? 400 : 200).json({
           success: false,
           duplicate: !!regResult.duplicate,
@@ -655,6 +703,7 @@ app.post('/api/teams', async (req, res) => {
       }
       const existing = localMemoryDb.teams.find(t => t.phoneNumber === payload.phoneNumber || t.whatsappNumber === payload.whatsappNumber);
       if (existing) {
+        await Promise.allSettled(uploadedAssets.map(asset => removeFromSupabaseStorage(asset.bucket, asset.identifier)));
         return res.status(200).json({ success: false, duplicate: true, error: "Team already registered.", team: existing });
       }
       const regId = formatRegistrationId(localMemoryDb.teams.length + 1);
@@ -671,7 +720,11 @@ app.post('/api/teams', async (req, res) => {
     }
   } catch (err) {
     console.error('[DATABASE ERROR] POST /api/teams:', err);
-    return res.status(500).json({ success: false, error: 'Registration failed due to a server error. Please try again.' });
+    await Promise.allSettled(uploadedAssets.map(asset => removeFromSupabaseStorage(asset.bucket, asset.identifier)));
+    return res.status(500).json({
+      success: false,
+      error: err?.message || 'Registration failed due to a server error.'
+    });
   }
 });
 
@@ -724,6 +777,25 @@ app.post('/api/uploads/sponsor-image', requireAdmin, (req, res) => {
     } catch (uploadErr) {
       console.error('[SUPABASE STORAGE ERROR] Sponsor upload:', uploadErr.message);
       res.status(500).json({ success: false, error: uploadErr.message || 'Failed to upload image.' });
+    }
+  });
+});
+
+app.post('/api/uploads/payment-qr', requireAdmin, (req, res) => {
+  upload.single('file')(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ success: false, error: err.message || 'Payment QR upload failed.' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No payment QR image file uploaded.' });
+    }
+
+    try {
+      const publicUrl = await uploadToSupabaseStorage('payment-qr', req.file.buffer, req.file.originalname, req.file.mimetype);
+      res.json({ success: true, url: publicUrl, filename: req.file.originalname });
+    } catch (uploadErr) {
+      console.error('[SUPABASE STORAGE ERROR] Payment QR upload:', uploadErr);
+      res.status(500).json({ success: false, error: uploadErr.message || 'Failed to upload payment QR image.' });
     }
   });
 });

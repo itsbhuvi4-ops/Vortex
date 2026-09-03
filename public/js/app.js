@@ -105,16 +105,6 @@ async function fetchWithTimeout(url, options = {}, timeout = 8000) {
   }
 }
 
-// Preset Clean Avatars
-const PRESET_CRESTS = [
-  { id: '1', name: 'Viper', url: 'https://images.unsplash.com/photo-1563089145-599997674d42?auto=format&fit=crop&w=200&q=80' },
-  { id: '2', name: 'Titan', url: 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=200&q=80' },
-  { id: '3', name: 'Shadow', url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=200&q=80' },
-  { id: '4', name: 'Phoenix', url: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=200&q=80' },
-  { id: '5', name: 'Cyber', url: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=200&q=80' },
-  { id: '6', name: 'Apex', url: 'https://images.unsplash.com/photo-1614680376593-902f749f7ffc?auto=format&fit=crop&w=200&q=80' }
-];
-
 // Helper: Calculate Countdown
 function calculateTimeLeft(targetIso) {
   if (!targetIso) return { total: 0, days: 0, hours: 0, minutes: 0, seconds: 0 };
@@ -300,7 +290,7 @@ function App() {
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'tournament_settings' }, () => {
               if (isMounted) {
-                fetchWithTimeout('/api/settings', {}, 5000).then(r => r.ok ? r.json() : null).then(s => { if (s?.success && isMounted) setSettings(s.settings); }).catch(() => {});
+                fetchWithTimeout('/api/settings', {}, 5000).then(r => r.ok ? r.json() : null).then(s => { if (s?.success && s.settings && isMounted) setSettings(normalizeSettingsPayload(s.settings)); }).catch(() => {});
                 fetchWithTimeout('/api/bracket', {}, 5000).then(r => r.ok ? r.json() : null).then(b => { if (b?.success && isMounted) setBracketData(b); }).catch(() => {});
               }
             })
@@ -1252,8 +1242,10 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
   const [step, setStep] = useState(1);
   const [agreedRules, setAgreedRules] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const submitLock = useRef(false);
+  const [paymentProofFile, setPaymentProofFile] = useState(null);
+  const [teamLogoFile, setTeamLogoFile] = useState(null);
   const [registeredResult, setRegisteredResult] = useState(null);
-  const [showPassView, setShowPassView] = useState(false);
 
   const [formData, setFormData] = useState({
     teamName: '',
@@ -1274,6 +1266,15 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
   const handleLogoUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/jpg'].includes(file.type)) {
+      showToast('Only JPG, PNG, and WEBP images are allowed.', 'error');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Image size must be under 5MB.', 'error');
+      return;
+    }
+    setTeamLogoFile(file);
     const reader = new FileReader();
     reader.onloadend = () => setFormData(prev => ({ ...prev, teamLogo: reader.result }));
     reader.readAsDataURL(file);
@@ -1282,6 +1283,15 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
   const handleProofUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/jpg'].includes(file.type)) {
+      showToast('Only JPG, PNG, and WEBP images are allowed.', 'error');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Image size must be under 5MB.', 'error');
+      return;
+    }
+    setPaymentProofFile(file);
     const reader = new FileReader();
     reader.onloadend = () => setFormData(prev => ({ ...prev, paymentProof: reader.result }));
     reader.readAsDataURL(file);
@@ -1294,49 +1304,152 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
   };
 
   const handleSubmit = async () => {
+    if (submitting || submitLock.current) return;
     if (registrationStatus !== 'open') {
       showToast(registrationStatus === 'coming_soon' ? 'Registration is coming soon.' : 'Registration is currently closed.', 'error');
       return;
     }
     if (!formData.teamName || !formData.teamLeader || !formData.phoneNumber || !formData.whatsappNumber) {
-      showToast("Please fill in all squad details", "error");
+      showToast('Please fill in all squad details', 'error');
       return;
     }
     if (!formData.player1 || !formData.player2 || !formData.player3 || !formData.player4) {
-      showToast("Please provide all 4 players (1-4)", "error");
+      showToast('Please provide all 4 players (1-4)', 'error');
       return;
     }
-    if (!formData.paymentProof) {
-      showToast("Please upload your payment screenshot", "error");
+    if (!paymentProofFile) {
+      showToast('Please upload your payment screenshot', 'error');
       return;
     }
     if (!formData.joinedWhatsapp || !formData.joinedDiscord) {
-      showToast("Please confirm community joins", "error");
+      showToast('Please confirm community joins', 'error');
       return;
     }
+    submitLock.current = true;
     setSubmitting(true);
     try {
-      const res = await fetchWithTimeout('/api/teams', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      }, 15000);
-      const data = await res.json();
+      const requestBody = new FormData();
+      Object.entries(formData).forEach(([key, value]) => {
+        if (key !== 'teamLogo' && key !== 'paymentProof') requestBody.append(key, String(value ?? ''));
+      });
+      requestBody.append('paymentProof', paymentProofFile);
+      if (teamLogoFile) requestBody.append('teamLogo', teamLogoFile);
+
+      const res = await fetchWithTimeout('/api/teams', { method: 'POST', body: requestBody }, 15000);
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        throw new Error(`Registration server returned an invalid response (HTTP ${res.status}).`);
+      }
       if (data.success) {
-        const team = data.team;
-        setRegisteredResult(team);
+        setRegisteredResult(data.team);
         setStep(5);
         if (window.confetti) window.confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
-        showToast(data.duplicate ? "Team already registered. Showing pass." : "Registration successful", data.duplicate ? "info" : "success");
+        showToast(data.duplicate ? 'Team already registered. Showing pass.' : 'Registration successful', data.duplicate ? 'info' : 'success');
         if (onRegisterSuccess) onRegisterSuccess();
       } else {
-        showToast(data.message || "Failed to register team", "error");
+        showToast(data.error || data.message || 'Failed to register team', 'error');
       }
     } catch (err) {
-      console.error("Registration submit error:", err);
-      showToast(err.message || "Network error submitting form", "error");
+      console.error('Registration submit error:', err);
+      showToast(err.message || 'Network error submitting form', 'error');
     } finally {
+      submitLock.current = false;
       setSubmitting(false);
+    }
+  };
+
+  const downloadTicketPass = async (passTeam) => {
+    if (!window.jspdf || typeof window.QRCode !== 'function' || typeof window.JsBarcode !== 'function') {
+      showToast('Ticket PDF libraries are unavailable in this browser.', 'error');
+      return;
+    }
+    try {
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [900, 600] });
+      const red = [210, 38, 38];
+      const white = [245, 245, 245];
+      const black = [5, 5, 5];
+      const grey = [160, 160, 160];
+      const roster = [passTeam.player1, passTeam.player2, passTeam.player3, passTeam.player4, passTeam.substitute].filter(Boolean);
+      const timestamp = new Date(passTeam.registeredAt || passTeam.createdAt || Date.now()).toLocaleDateString();
+      const registrationId = String(passTeam.registrationId || '');
+      const qrData = JSON.stringify({ tournament: 'VORTEX CLASH 2026', registrationId, team: passTeam.teamName || '' });
+      const qrContainer = document.createElement('div');
+      new window.QRCode(qrContainer, {
+        text: qrData,
+        width: 220,
+        height: 220,
+        correctLevel: window.QRCode.CorrectLevel.M
+      });
+      const qrCanvas = qrContainer.querySelector('canvas');
+      const qrImage = qrCanvas ? qrCanvas.toDataURL('image/png') : qrContainer.querySelector('img')?.src;
+      if (!qrImage) throw new Error('QR code generation returned no image.');
+      const barcodeCanvas = document.createElement('canvas');
+      window.JsBarcode(barcodeCanvas, registrationId, { format: 'CODE128', displayValue: false, margin: 0, height: 42, width: 2 });
+
+      pdf.setFillColor(...black);
+      pdf.rect(0, 0, 900, 600, 'F');
+      pdf.setDrawColor(...red);
+      pdf.setLineWidth(1.5);
+      pdf.roundedRect(8, 8, 884, 584, 20, 20, 'S');
+      pdf.setDrawColor(255, 255, 255);
+      pdf.setLineDashPattern([3, 6], 0);
+      pdf.line(250, 25, 250, 575);
+      pdf.setLineDashPattern([], 0);
+      pdf.setDrawColor(...red);
+      pdf.line(8, 300, 892, 300);
+
+      const drawBrand = (y, label) => {
+        pdf.setTextColor(...red); pdf.setFont('helvetica', 'bold'); pdf.setFontSize(13); pdf.text('DS TAMIL GAMING', 48, y);
+        pdf.setTextColor(...white); pdf.setFontSize(10); pdf.text('PRESENTS', 48, y + 20);
+        pdf.setFontSize(32); pdf.text('VORTEX', 48, y + 66);
+        pdf.setTextColor(...red); pdf.text('CLASH', 48, y + 101);
+        pdf.setTextColor(...white); pdf.setFontSize(20); pdf.text('2026', 95, y + 130);
+        pdf.setTextColor(...red); pdf.setFontSize(10); pdf.text(label, 48, y + 174);
+      };
+      drawBrand(48, 'TICKETS PASS');
+      drawBrand(340, 'REGISTRATION PASS');
+
+      pdf.setTextColor(...red); pdf.setFontSize(10); pdf.text('VORTEX CLASH 2026', 290, 48);
+      pdf.setTextColor(...white); pdf.setFontSize(25); pdf.text('TICKETS PASS', 290, 82);
+      pdf.setTextColor(...red); pdf.setFontSize(8); pdf.text('TEAM NAME', 290, 112);
+      pdf.setTextColor(...white); pdf.setFontSize(19); pdf.text(String(passTeam.teamName || '').slice(0, 34), 290, 138);
+      pdf.setDrawColor(...red); pdf.line(290, 150, 720, 150);
+      pdf.setTextColor(...red); pdf.setFontSize(9); pdf.text('PASS ID', 290, 180);
+      pdf.setTextColor(...white); pdf.setFontSize(15); pdf.text(registrationId, 290, 200);
+      pdf.setTextColor(...grey); pdf.setFontSize(8); pdf.text('VORTEX CLASH 2026', 290, 242);
+      pdf.addImage(barcodeCanvas.toDataURL('image/png'), 'PNG', 735, 55, 110, 150);
+      pdf.setTextColor(...red); pdf.setFontSize(8); pdf.text('VORTEX CLASH 2026', 735, 220);
+      pdf.setTextColor(...red); pdf.setFontSize(17); pdf.text('TICKETS PASS', 862, 250, { angle: 90 });
+
+      pdf.setTextColor(...red); pdf.setFontSize(10); pdf.text('VORTEX CLASH 2026', 290, 340);
+      pdf.setTextColor(...white); pdf.setFontSize(24); pdf.text('REGISTRATION PASS', 290, 372);
+      pdf.setDrawColor(...red); pdf.line(290, 385, 610, 385);
+
+      const drawField = (label, value, x, y) => {
+        pdf.setTextColor(...red); pdf.setFontSize(8); pdf.text(label.toUpperCase(), x, y);
+        pdf.setTextColor(...white); pdf.setFontSize(11); pdf.text(String(value || '-').slice(0, 25), x, y + 15);
+        pdf.setDrawColor(90, 30, 30); pdf.line(x, y + 22, x + 135, y + 22);
+      };
+      drawField('Team Name', passTeam.teamName, 290, 410);
+      drawField('Team ID', registrationId, 290, 450);
+      drawField('Registered By', passTeam.teamLeader, 290, 490);
+      drawField('Phone', passTeam.phoneNumber, 460, 450);
+      drawField('Players', roster.join(', '), 460, 490);
+
+      pdf.setDrawColor(...red); pdf.roundedRect(610, 405, 150, 130, 6, 6, 'S');
+      pdf.setTextColor(...red); pdf.setFontSize(8); pdf.text('IMPORTANT NOTES', 622, 422);
+      pdf.setTextColor(...white); pdf.setFontSize(7.5); pdf.text('Valid only for VORTEX CLASH 2026.', 622, 440); pdf.text('Carry this pass for your team.', 622, 455); pdf.text('Follow all tournament rules.', 622, 470);
+      pdf.addImage(qrImage, 'PNG', 775, 342, 92, 92);
+      pdf.setTextColor(...red); pdf.setFontSize(8); pdf.text('SCAN FOR UPDATES', 778, 448);
+      pdf.setTextColor(...grey); pdf.setFontSize(8); pdf.text('POWERED BY DS TAMIL GAMING', 620, 565);
+      pdf.setTextColor(...red); pdf.setFontSize(17); pdf.text('REGISTRATION PASS', 862, 585, { angle: 90 });
+      pdf.save(`VORTEX-CLASH-2026-PASS-${registrationId || 'UNKNOWN'}.pdf`);
+    } catch (error) {
+      console.error('Ticket PDF generation error:', error);
+      showToast('Unable to generate the registration pass PDF.', 'error');
     }
   };
 
@@ -1471,8 +1584,8 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
           </div>
         </div>
 
-        <button onClick={() => window.print()} className="w-full py-2.5 rounded-lg btn-secondary text-xs font-medium">
-          Print Team Pass
+        <button onClick={() => downloadTicketPass(teamToDisplay)} className="w-full py-2.5 rounded-lg btn-primary text-xs font-medium">
+          DOWNLOAD REGISTRATION PASS
         </button>
       </div>
     );
@@ -1507,8 +1620,7 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
           <p className="text-xs text-neutral-400 mt-1 font-mono">{registeredResult.registrationId}</p>
         </div>
 
-        {!showPassView ? (
-          <>
+        <>
             <div className="p-4 rounded-lg bg-neutral-950 border border-neutral-800 text-left space-y-3 text-xs">
               <div className="flex items-center gap-3 border-b border-neutral-800 pb-3">
                 <img src={registeredResult.teamLogo || ''} alt="" className="w-10 h-10 rounded-lg object-cover" />
@@ -1533,23 +1645,14 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
             </div>
 
             <div className="flex gap-2">
-              <button onClick={() => setShowPassView(true)} className="flex-1 py-2 rounded-lg btn-primary text-xs font-semibold">
-                View Pass
+              <button onClick={() => downloadTicketPass(registeredResult)} className="flex-1 py-2 rounded-lg btn-primary text-xs font-semibold">
+                DOWNLOAD REGISTRATION PASS
               </button>
               <button onClick={() => window.location.reload()} className="flex-1 py-2 rounded-lg btn-secondary text-xs font-medium">
                 Done
               </button>
             </div>
-          </>
-        ) : (
-          <div className="space-y-4">
-            <div data-pass-ticket>{renderPassCard(registeredResult)}</div>
-            <div className="flex gap-2">
-              <button onClick={() => setShowPassView(false)} className="flex-1 py-2 rounded-lg btn-secondary text-xs font-medium">Back</button>
-              <button onClick={() => window.location.reload()} className="flex-1 py-2 rounded-lg btn-primary text-xs font-semibold">Done</button>
-            </div>
-          </div>
-        )}
+        </>
       </div>
     );
   }
@@ -1610,18 +1713,6 @@ function RegisterPage({ settings, sponsors, rules, totalRegistered, maxCapacity,
 
           <div className="space-y-1">
             <label className="text-neutral-400">Team Logo / Crest</label>
-            <div className="flex gap-2">
-              {PRESET_CRESTS.map(c => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setFormData({ ...formData, teamLogo: c.url })}
-                  className={`p-1 rounded-lg border ${formData.teamLogo === c.url ? 'border-supabase bg-emerald-500/10' : 'border-neutral-800'}`}
-                >
-                  <img src={c.url} alt="" className="w-8 h-8 rounded object-cover" />
-                </button>
-              ))}
-            </div>
             <input
               type="file"
               accept="image/*"
@@ -1853,6 +1944,8 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
   const [editingSponsor, setEditingSponsor] = useState(null);
   const [editingRule, setEditingRule] = useState(null);
   const [settingsForm, setSettingsForm] = useState(settings);
+  const [paymentQrFile, setPaymentQrFile] = useState(null);
+  const [paymentQrPreview, setPaymentQrPreview] = useState(settings.paymentQrUrl || '');
   const [sponsorForm, setSponsorForm] = useState({
     name: '',
     role: '',
@@ -1868,6 +1961,11 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
     content: '',
     orderIndex: ''
   });
+
+  useEffect(() => {
+    setSettingsForm(normalizeSettingsPayload(settings));
+    setPaymentQrPreview(settings.paymentQrUrl || '');
+  }, [settings]);
 
   const isLocked = bracketData?.bracket?.isLocked;
   const isPublished = bracketData?.bracket?.status === 'PUBLISHED';
@@ -1947,7 +2045,7 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
     }
 
     const formData = new FormData();
-    formData.append('image', file);
+    formData.append('file', file);
 
     try {
       const res = await fetch('/api/uploads/sponsor-image', {
@@ -1968,6 +2066,24 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
       console.error('Sponsor upload error:', error);
       showToast('Network error while uploading sponsor image', 'error');
     }
+  };
+
+  const handlePaymentQrUpload = (event) => {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    if (!validTypes.includes(file.type)) {
+      showToast('Only JPG, PNG, and WEBP images are allowed.', 'error');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Image size must be under 5MB.', 'error');
+      return;
+    }
+
+    setPaymentQrFile(file);
+    setPaymentQrPreview(URL.createObjectURL(file));
   };
 
   const resetSponsorForm = () => {
@@ -1998,6 +2114,10 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
     const payload = { ...sponsorForm };
     if (!payload.name || !payload.role) {
       showToast('Sponsor name and role are required', 'error');
+      return;
+    }
+    if (!payload.logoUrl) {
+      showToast('Please upload a sponsor logo image.', 'error');
       return;
     }
 
@@ -2258,10 +2378,10 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
                 className="w-full p-2 input-supabase text-xs"
               />
               <div className="md:col-span-2 space-y-2">
-                <label className="text-neutral-400 block">Sponsor logo image</label>
+                <label className="text-neutral-400 block">Upload Sponsor Logo</label>
                 <input
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
+                  accept="image/jpeg,image/png,image/webp,image/jpg"
                   onChange={handleSponsorImageUpload}
                   className="w-full text-xs text-neutral-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-neutral-800 file:text-xs file:text-white"
                 />
@@ -2271,16 +2391,6 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
                   </div>
                 )}
               </div>
-              <input
-                type="text"
-                placeholder="Logo URL (optional fallback)"
-                value={sponsorForm.logoUrl}
-                onChange={(e) => {
-                  setSponsorForm({ ...sponsorForm, logoUrl: e.target.value });
-                  setSponsorImagePreview(e.target.value);
-                }}
-                className="w-full p-2 input-supabase text-xs md:col-span-2"
-              />
               <input
                 type="text"
                 placeholder="Profile link"
@@ -2445,13 +2555,38 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
         <form
           onSubmit={async (e) => {
             e.preventDefault();
-            await fetch('/api/settings', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(settingsForm)
-            });
-            fetchData();
-            showToast("Settings updated", "success");
+            try {
+              let nextSettings = { ...settingsForm };
+              if (paymentQrFile) {
+                const uploadForm = new FormData();
+                uploadForm.append('file', paymentQrFile);
+                const uploadResponse = await fetchWithTimeout('/api/uploads/payment-qr', {
+                  method: 'POST',
+                  body: uploadForm
+                }, 10000);
+                const uploadData = await uploadResponse.json();
+                if (!uploadResponse.ok || !uploadData.success || !uploadData.url) {
+                  throw new Error(uploadData.error || 'Payment QR image upload failed.');
+                }
+                nextSettings = { ...nextSettings, paymentQrUrl: uploadData.url };
+              }
+              const response = await fetchWithTimeout('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(normalizeSettingsPayload(nextSettings))
+              }, 10000);
+              const data = await response.json();
+              if (!response.ok || !data.success) {
+                throw new Error(data.error || 'Failed to update settings.');
+              }
+              setSettingsForm(normalizeSettingsPayload(data.settings));
+              setPaymentQrFile(null);
+              setPaymentQrPreview(data.settings.paymentQrUrl || '');
+              await fetchData();
+              showToast("Settings updated", "success");
+            } catch (err) {
+              showToast(err.message || 'Failed to update settings.', 'error');
+            }
           }}
           className="supabase-card p-6 space-y-4 max-w-lg text-xs"
         >
@@ -2523,14 +2658,19 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
               <option value="coming_soon">COMING SOON</option>
             </select>
           </div>
-          <div>
-            <label className="text-neutral-400 block mb-1">Payment QR URL</label>
+          <div className="space-y-2">
+            <label className="text-neutral-400 block mb-1">Upload Payment QR Code</label>
             <input
-              type="text"
-              value={settingsForm.paymentQrUrl || ''}
-              onChange={(e) => setSettingsForm({ ...settingsForm, paymentQrUrl: e.target.value })}
-              className="w-full p-2 input-supabase text-xs"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={handlePaymentQrUpload}
+              className="w-full text-xs text-neutral-400 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-neutral-800 file:text-xs file:text-white"
             />
+            {paymentQrPreview && (
+              <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-2 flex items-center justify-center">
+                <img src={paymentQrPreview} alt="Payment QR preview" className="w-40 h-40 object-contain" />
+              </div>
+            )}
           </div>
           <button type="submit" className="w-full py-2 rounded-lg btn-primary text-xs font-semibold">
             Save Settings
