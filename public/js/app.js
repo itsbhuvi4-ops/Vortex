@@ -147,23 +147,41 @@ function CountdownDisplay({ settings }) {
   }
 
   const hasStarted = timeLeft.total <= 0;
-  const countdownText = hasStarted ? 'TOURNAMENT STARTED' : 'TOURNAMENT STARTS IN';
+  const pad = (n) => String(n).padStart(2, '0');
+
+  const Colon = () => (
+    <div className="hidden sm:flex flex-col items-center justify-center gap-2" style={{height: 'clamp(2rem, 8vw, 4.75rem)'}}>
+      <span className="block w-1 h-1 rounded-full" style={{background:'#b8956a'}}></span>
+      <span className="block w-1 h-1 rounded-full" style={{background:'#b8956a'}}></span>
+    </div>
+  );
+
+  const Digit = ({ value, label }) => (
+    <div className="flex flex-col items-center">
+      <div className="genesis-countdown-digit" style={{fontSize: 'clamp(2rem, 8vw, 4.75rem)', lineHeight: 1.05, minWidth: '2ch', textAlign: 'center'}}>
+        {pad(value)}
+      </div>
+      <span className="genesis-countdown-label mt-2 sm:mt-3">{label}</span>
+    </div>
+  );
 
   return (
-    <div className="mt-4 inline-flex flex-col gap-2 rounded-xl border border-supabase/30 bg-neutral-950/80 px-4 py-3 shadow-lg shadow-supabase/5">
-      <div className="text-[10px] uppercase tracking-[0.22em] text-supabase font-mono font-bold">{countdownText}</div>
+    <div className="genesis-fade-up genesis-fade-up-4">
       {!hasStarted ? (
-        <div className="flex flex-wrap items-center gap-2 text-lg sm:text-2xl font-black text-white font-mono">
-          <span className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1">{String(timeLeft.days).padStart(2,'0')}d</span>
-          <span className="text-neutral-500">:</span>
-          <span className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1">{String(timeLeft.hours).padStart(2,'0')}h</span>
-          <span className="text-neutral-500">:</span>
-          <span className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1">{String(timeLeft.minutes).padStart(2,'0')}m</span>
-          <span className="text-neutral-500">:</span>
-          <span className="rounded-md border border-neutral-700 bg-neutral-900 px-2 py-1">{String(timeLeft.seconds).padStart(2,'0')}s</span>
+        <div className="flex items-start justify-center gap-4 sm:gap-6 lg:gap-9">
+          <Digit value={timeLeft.days} label="Days" />
+          <Colon />
+          <Digit value={timeLeft.hours} label="Hours" />
+          <Colon />
+          <Digit value={timeLeft.minutes} label="Minutes" />
+          <Colon />
+          <Digit value={timeLeft.seconds} label="Seconds" />
         </div>
       ) : (
-        <div className="text-lg sm:text-2xl font-black text-amber-300 font-mono">00 : 00 : 00 : 00</div>
+        <div className="text-center">
+          <div className="genesis-countdown-digit" style={{fontSize: 'clamp(1.5rem, 5vw, 3rem)'}}>LIVE NOW</div>
+          <span className="genesis-countdown-label mt-2 block">Tournament Started</span>
+        </div>
       )}
     </div>
   );
@@ -378,112 +396,137 @@ function App() {
   // Only show loading screen during initial loading phase; never permanently blocked
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0c0c0c] text-neutral-300">
-        <div className="w-8 h-8 border-2 border-supabase border-t-transparent rounded-full animate-spin mb-3"></div>
-        <div className="text-xs font-mono text-neutral-400">Loading platform...</div>
+      <div className="min-h-screen flex flex-col items-center justify-center" style={{background:'#040a11'}}>
+        {/* Starfield behind loader */}
+        <div style={{position:'fixed',inset:0,opacity:0.9,pointerEvents:'none',
+          backgroundImage: 'radial-gradient(1px 1px at 17% 23%, rgba(251,238,203,0.75), transparent 60%), radial-gradient(1.6px 1.6px at 71% 58%, rgba(251,238,203,0.65), transparent 62%), radial-gradient(2.4px 2.4px at 41% 27%, rgba(251,238,203,0.85), transparent 64%), radial-gradient(1px 1px at 62% 11%, rgba(251,238,203,0.55), transparent 60%), radial-gradient(1.6px 1.6px at 28% 18%, rgba(244,196,106,0.70), transparent 62%)',
+          backgroundSize: '180px 180px, 330px 330px, 710px 710px, 180px 180px, 330px 330px',
+          backgroundRepeat: 'repeat'
+        }}></div>
+        {/* Top glow */}
+        <div style={{position:'fixed',inset:'0',pointerEvents:'none',
+          background:'radial-gradient(ellipse 75% 55% at 50% 0%, rgba(226,167,67,0.18) 0%, rgba(226,167,67,0.04) 45%, transparent 72%)'
+        }}></div>
+        <div className="relative z-10 flex flex-col items-center gap-6">
+          {/* Genesis title */}
+          <div className="genesis-loader-title text-center">
+            <div className="relative">
+              <span className="absolute inset-0 select-none pointer-events-none" style={{color:'rgba(226,167,67,0.25)', filter:'blur(0.35em)', fontFamily:'Orbitron, sans-serif', fontWeight:900, fontSize:'clamp(2rem, 8vw, 4.5rem)', lineHeight:0.9, textTransform:'uppercase'}}>VORTEX<span style={{marginLeft:'0.06em', fontSize:'0.42em', verticalAlign:'super'}}>2026</span></span>
+              <span className="relative genesis-gradient-text" style={{fontFamily:'Orbitron, sans-serif', fontWeight:900, fontSize:'clamp(2rem, 8vw, 4.5rem)', lineHeight:0.9, textTransform:'uppercase', display:'block'}}>VORTEX<span style={{marginLeft:'0.06em', fontSize:'0.42em', verticalAlign:'super'}}>2026</span></span>
+            </div>
+          </div>
+          {/* Subtitle */}
+          <div className="genesis-loader-subtitle" style={{fontFamily:'Share Tech Mono, monospace', fontSize:'11px', textTransform:'uppercase', letterSpacing:'0.34em', color:'#f4c46a'}}>DS TAMIL GAMING — CLASH EDITION</div>
+          {/* Gold line */}
+          <div className="genesis-loader-line" style={{width:'160px', height:'1px', background:'linear-gradient(to right, transparent, #e2a743, transparent)'}}></div>
+          {/* Bouncing dots */}
+          <div className="genesis-loader-dots">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0c0c0c] bg-dot-pattern text-neutral-200 relative">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-6xl h-80 bg-supabase-radial pointer-events-none -z-10"></div>
+    <div className="min-h-screen flex flex-col text-neutral-200 relative" style={{background:'#040a11'}}>
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-lg border border-neutral-800 bg-neutral-900/95 backdrop-blur-md shadow-2xl flex items-center gap-3 text-xs text-white">
+        <div className="fixed bottom-6 right-6 z-50 px-4 py-3 border bg-neutral-900/95 backdrop-blur-md shadow-2xl flex items-center gap-3 text-xs text-white" style={{borderColor:'rgba(244,198,106,0.25)', borderRadius:'2px'}}>
           <div className={`w-2 h-2 rounded-full ${toastMessage.type === 'error' ? 'bg-rose-500' : 'bg-supabase'}`}></div>
           <span>{toastMessage.text}</span>
         </div>
       )}
 
-      {/* Supabase Clean Navbar */}
-      <header className="sticky top-0 z-40 border-b border-neutral-800/80 bg-[#0c0c0c]/90 backdrop-blur-md">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+      {/* Genesis-style Navbar */}
+      <header className="sticky top-0 z-40 border-b" style={{borderColor:'rgba(244,198,106,0.24)', background:'rgba(4,10,17,0.92)', backdropFilter:'blur(14px)'}}>
+        <nav className="max-w-7xl mx-auto px-5 sm:px-8 h-16 sm:h-20 flex items-center justify-between relative">
           
           {/* Logo */}
           <div
             onClick={() => setActiveTab('home')}
-            className="flex items-center gap-3 cursor-pointer group"
+            className="flex items-center gap-3 cursor-pointer group relative z-10"
           >
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-supabase group-hover:border-supabase transition-colors">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center text-supabase border transition-colors duration-300" style={{background:'rgba(226,167,67,0.08)', borderColor:'rgba(226,167,67,0.30)'}}>
               <i data-lucide="zap" className="w-4 h-4"></i>
             </div>
             <div>
-              <div className="text-xs font-mono font-semibold tracking-wider text-supabase">DS TAMIL GAMING</div>
-              <div className="text-sm font-bold text-white tracking-tight">VORTEX CLASH 2026</div>
+              <div style={{fontFamily:'Share Tech Mono, monospace', fontSize:'10px', textTransform:'uppercase', letterSpacing:'0.28em', color:'#e2a743'}}>DS TAMIL GAMING</div>
+              <div style={{fontFamily:'Orbitron, sans-serif', fontSize:'13px', fontWeight:800, color:'#fff', letterSpacing:'0.02em'}}>VORTEX CLASH</div>
             </div>
           </div>
 
-          {/* Desktop Nav */}
-          <nav className="hidden md:flex items-center space-x-1 text-xs font-medium">
-            {[
-              { id: 'home', label: 'Home' },
-              { id: 'tournament', label: 'Tournament' },
-              { id: 'bracket', label: 'Bracket' },
-              { id: 'sponsors', label: 'Sponsors' },
-              { id: 'rules', label: 'Rules' },
-              { id: 'register', label: 'Register' }
-            ].map(tab => {
-              const active = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`px-3 py-1.5 rounded-md transition-colors ${
-                    active
-                      ? 'bg-neutral-800 text-white font-semibold'
-                      : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </nav>
+          {/* Desktop Nav — Genesis mono links */}
+          <div className="hidden lg:flex items-center absolute inset-x-0 justify-center px-5 sm:px-8 pointer-events-none">
+            <ul className="flex items-center gap-4 lg:gap-7 pointer-events-auto">
+              {[
+                { id: 'home', label: 'Home' },
+                { id: 'tournament', label: 'Tournament' },
+                { id: 'bracket', label: 'Bracket' },
+              ].map(tab => (
+                <li key={tab.id}>
+                  <button onClick={() => setActiveTab(tab.id)} className={`genesis-nav-link ${activeTab === tab.id ? 'active' : ''}`}>{tab.label}</button>
+                </li>
+              ))}
+            </ul>
 
-          {/* Actions */}
-          <div className="hidden sm:flex items-center gap-3">
-            <div className={`px-2.5 py-1 rounded-full text-xs font-mono border ${
-              isRegistrationFull
-                ? 'bg-rose-950/40 border-rose-800/60 text-rose-300'
-                : 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300'
-            }`}>
-              {isRegistrationFull ? 'Registration Full' : `${totalRegistered}/${maxCapacity} Registered`}
-            </div>
+            {/* Center pill — Register */}
+            <button
+              onClick={() => setActiveTab('register')}
+              className={`mx-4 lg:mx-7 pointer-events-auto flex items-center gap-2 rounded-full border px-4 py-1.5 transition-colors duration-300 ${activeTab === 'register' ? 'genesis-active-pill' : ''}`}
+              style={activeTab === 'register' ? {} : {fontFamily:'Share Tech Mono, monospace', fontSize:'11px', textTransform:'uppercase', letterSpacing:'0.24em', borderColor:'rgba(226,167,67,0.50)', color:'#e2a743', background:'rgba(226,167,67,0.06)'}}
+            >
+              <span className="block w-1.5 h-1.5 rounded-full shrink-0" style={{background: activeTab === 'register' ? 'rgba(0,0,0,0.70)' : '#e2a743'}}></span>
+              <span className="whitespace-nowrap">Register</span>
+            </button>
 
+            <ul className="flex items-center gap-4 lg:gap-7 pointer-events-auto">
+              {[
+                { id: 'sponsors', label: 'Sponsors' },
+                { id: 'rules', label: 'Rules' },
+              ].map(tab => (
+                <li key={tab.id}>
+                  <button onClick={() => setActiveTab(tab.id)} className={`genesis-nav-link ${activeTab === tab.id ? 'active' : ''}`}>{tab.label}</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Right actions */}
+          <div className="hidden lg:flex items-center gap-3 relative z-10">
             <button
               onClick={() => {
                 if (isAdminLoggedIn) setActiveTab('admin');
                 else setAdminLoginModal(true);
               }}
-              className={`p-1.5 rounded-lg border text-xs transition-colors ${
-                activeTab === 'admin'
-                  ? 'bg-emerald-500/10 border-supabase text-supabase'
-                  : 'bg-neutral-900 border-neutral-800 text-neutral-400 hover:text-white'
-              }`}
-              title="Admin Panel"
+              className="rounded-full border px-5 py-2 transition-colors hover:bg-supabase hover:text-black"
+              style={{fontFamily:'Share Tech Mono, monospace', fontSize:'11px', textTransform:'uppercase', letterSpacing:'0.24em', borderColor:'rgba(226,167,67,0.60)', color:'#fff'}}
             >
-              <i data-lucide="shield" className="w-4 h-4"></i>
+              Admin
             </button>
           </div>
 
           {/* Mobile menu toggle */}
-          <div className="md:hidden">
+          <div className="lg:hidden relative z-10">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-300"
+              className="flex h-10 w-10 flex-col items-center justify-center gap-[5px]"
+              aria-label="Open menu"
             >
-              <i data-lucide={mobileMenuOpen ? 'x' : 'menu'} className="w-5 h-5"></i>
+              <span className="block h-px w-6 bg-white"></span>
+              <span className="block h-px w-6 bg-white"></span>
             </button>
           </div>
 
-        </div>
+        </nav>
+        {/* Gold progress line under nav on mobile */}
+        <span className="block h-px origin-left lg:hidden" style={{background:'rgba(226,167,67,0.80)', transform: mobileMenuOpen ? 'scaleX(1)' : 'scaleX(0)', transition:'transform 0.3s'}}></span>
       </header>
 
-      {/* Mobile Drawer */}
+      {/* Mobile Drawer — Genesis style */}
       {mobileMenuOpen && (
-        <div className="md:hidden bg-neutral-950 border-b border-neutral-800 px-4 py-4 space-y-2 text-xs">
+        <div className="lg:hidden border-b px-5 py-5 space-y-2" style={{background:'rgba(4,10,17,0.98)', borderColor:'rgba(244,198,106,0.24)'}}>
           {['home', 'tournament', 'bracket', 'sponsors', 'rules', 'register'].map(id => (
             <button
               key={id}
@@ -491,9 +534,8 @@ function App() {
                 setActiveTab(id);
                 setMobileMenuOpen(false);
               }}
-              className={`w-full text-left px-3 py-2 rounded-md capitalize font-medium ${
-                activeTab === id ? 'bg-neutral-800 text-white' : 'text-neutral-400'
-              }`}
+              className="w-full text-left px-3 py-2.5 uppercase"
+              style={{fontFamily:'Share Tech Mono, monospace', fontSize:'11px', letterSpacing:'0.24em', color: activeTab === id ? '#fbeecb' : '#a1a1aa', borderBottom:'1px solid rgba(244,198,106,0.12)'}}
             >
               {id}
             </button>
@@ -504,7 +546,8 @@ function App() {
               if (isAdminLoggedIn) setActiveTab('admin');
               else setAdminLoginModal(true);
             }}
-            className="w-full text-left px-3 py-2 rounded-md text-supabase bg-emerald-950/20 border border-emerald-800/40"
+            className="w-full text-left px-3 py-2.5 uppercase mt-2"
+            style={{fontFamily:'Share Tech Mono, monospace', fontSize:'11px', letterSpacing:'0.24em', color:'#e2a743', background:'rgba(226,167,67,0.06)', border:'1px solid rgba(226,167,67,0.25)'}}
           >
             Admin Panel
           </button>
@@ -512,7 +555,7 @@ function App() {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-6 py-8">
+      <main className="flex-1 w-full max-w-6xl mx-auto px-5 sm:px-8 py-8 relative z-10">
         {activeTab === 'home' && (
           <HomePage
             settings={settings}
@@ -601,21 +644,23 @@ function App() {
         />
       )}
 
+      {/* Chat widget — gold-themed */}
       <div className="fixed bottom-4 right-4 z-40">
         {!chatOpen ? (
           <button
             onClick={() => setChatOpen(true)}
-            className="px-4 py-2.5 rounded-full bg-emerald-500 text-black font-semibold shadow-2xl hover:bg-emerald-400 transition-colors flex items-center gap-2 text-xs"
+            className="px-4 py-2.5 rounded-full font-semibold shadow-2xl transition-colors flex items-center gap-2 text-xs"
+            style={{background:'#e2a743', color:'#11151c'}}
           >
             <i data-lucide="message-circle" className="w-4 h-4"></i>
             Ask Vortex Bot
           </button>
         ) : (
-          <div className="w-[340px] max-w-[90vw] rounded-2xl border border-neutral-700 bg-neutral-950/95 shadow-2xl backdrop-blur-md overflow-hidden">
-            <div className="flex items-center justify-between px-3 py-2.5 border-b border-neutral-800 bg-neutral-900/80">
+          <div className="w-[340px] max-w-[90vw] overflow-hidden shadow-2xl backdrop-blur-md" style={{borderRadius:'2px', border:'1px solid rgba(244,198,106,0.30)', background:'rgba(4,10,17,0.97)'}}>
+            <div className="flex items-center justify-between px-3 py-2.5" style={{borderBottom:'1px solid rgba(244,198,106,0.20)', background:'rgba(10,15,24,0.80)'}}>
               <div className="flex items-center gap-2 text-xs font-semibold text-white">
-                <div className="w-7 h-7 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
-                  <i data-lucide="bot" className="w-3.5 h-3.5 text-supabase"></i>
+                <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{background:'rgba(226,167,67,0.12)', border:'1px solid rgba(226,167,67,0.30)'}}>
+                  <i data-lucide="bot" className="w-3.5 h-3.5" style={{color:'#e2a743'}}></i>
                 </div>
                 Vortex Guide
               </div>
@@ -624,23 +669,26 @@ function App() {
               </button>
             </div>
 
-            <div className="max-h-72 overflow-y-auto px-3 py-3 space-y-3 bg-[#111111]">
+            <div className="max-h-72 overflow-y-auto px-3 py-3 space-y-3" style={{background:'#060c14'}}>
               {chatMessages.map(msg => (
                 <div key={msg.id} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed ${msg.type === 'user' ? 'bg-supabase text-black' : 'bg-neutral-800 text-neutral-100 border border-neutral-700'}`}>
+                  <div className={`max-w-[85%] px-3 py-2 text-xs leading-relaxed ${msg.type === 'user' ? 'text-black' : 'text-neutral-100'}`}
+                    style={msg.type === 'user' ? {background:'#e2a743', borderRadius:'2px'} : {background:'rgba(10,15,24,0.86)', border:'1px solid rgba(244,198,106,0.20)', borderRadius:'2px'}}
+                  >
                     {msg.text}
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="border-t border-neutral-800 p-2.5 bg-neutral-900">
+            <div className="p-2.5" style={{borderTop:'1px solid rgba(244,198,106,0.20)', background:'rgba(10,15,24,0.90)'}}>
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {['Rules', 'Sponsors', 'Register', 'Payment'].map(label => (
                   <button
                     key={label}
                     onClick={() => setChatInput(label)}
-                    className="px-2 py-1 rounded-md border border-neutral-700 bg-neutral-800 text-[10px] text-neutral-200 hover:border-supabase"
+                    className="px-2 py-1 text-[10px] text-neutral-200"
+                    style={{border:'1px solid rgba(244,198,106,0.20)', background:'rgba(226,167,67,0.06)', borderRadius:'2px'}}
                   >
                     {label}
                   </button>
@@ -651,9 +699,10 @@ function App() {
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
                   placeholder="Ask about rules, fees, or sponsors..."
-                  className="flex-1 bg-neutral-950 border border-neutral-700 rounded-lg px-2.5 py-2 text-xs text-white placeholder:text-neutral-500 outline-none focus:border-supabase"
+                  className="flex-1 px-2.5 py-2 text-xs text-white placeholder:text-neutral-500 outline-none"
+                  style={{background:'rgba(3,7,13,0.72)', border:'1px solid rgba(244,198,106,0.20)', borderRadius:'2px'}}
                 />
-                <button type="submit" className="px-3 py-2 rounded-lg bg-supabase text-black text-xs font-semibold hover:bg-emerald-400">
+                <button type="submit" className="px-3 py-2 text-xs font-semibold" style={{background:'#e2a743', color:'#11151c', borderRadius:'2px'}}>
                   Send
                 </button>
               </form>
@@ -675,91 +724,166 @@ function HomePage({ settings, teams, totalRegistered, maxCapacity, isRegistratio
   const registrationDisabled = registrationStatus !== 'open';
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-0">
       
-      {/* Clean Hero */}
-      <section className="supabase-card p-6 sm:p-10 relative overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          
-          <div className="lg:col-span-7 space-y-4">
-            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-supabase text-xs font-mono">
-              <span className="w-1.5 h-1.5 rounded-full bg-supabase"></span>
-              <span>DS TAMIL GAMING PRESENTS</span>
-            </div>
+      {/* Genesis Hero — Full-width cinematic */}
+      <section className="relative flex min-h-[80vh] w-full flex-col items-center justify-center px-6 pb-8 pt-16 text-center sm:px-8" style={{marginTop:'-2rem'}}>
+        <div className="flex w-full max-w-6xl flex-col items-center">
+          {/* Label */}
+          <div className="genesis-fade-up genesis-fade-up-1">
+            <span className="genesis-section-label">
+              <span className="line"></span>
+              <span>{registrationStatus === 'open' ? 'Registration Open' : statusText}</span>
+              <span> — Edition 03</span>
+            </span>
+          </div>
 
-            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-mono border ${registrationStatus === 'open' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : registrationStatus === 'coming_soon' ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-rose-500/10 border-rose-500/30 text-rose-300'}`}>
-              {statusText}
-            </div>
-
-            <CountdownDisplay settings={settings} />
-
-            <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
-              VORTEX CLASH <span className="text-supabase">2026</span>
+          {/* Hero Title with glow */}
+          <div className="mt-8 genesis-fade-up genesis-fade-up-2">
+            <h1 className="relative" style={{fontSize:'clamp(2.5rem, min(13vw, 17vh), 9rem)', lineHeight:0.85, fontFamily:'Orbitron, sans-serif', fontWeight:900, textTransform:'uppercase', letterSpacing:'-0.02em'}}>
+              {/* Glow duplicate */}
+              <span className="pointer-events-none absolute inset-0 select-none" style={{color:'rgba(226,167,67,0.25)', filter:'blur(0.35em)'}} aria-hidden="true">VORTEX<span style={{marginLeft:'0.06em', fontSize:'0.42em', verticalAlign:'super', letterSpacing:'0.02em'}}>'26</span></span>
+              {/* Visible gradient text */}
+              <span className="relative genesis-gradient-text">VORTEX<span style={{marginLeft:'0.06em', fontSize:'0.42em', verticalAlign:'super', letterSpacing:'0.02em'}}>'26</span></span>
             </h1>
+          </div>
 
-            <p className="text-neutral-400 text-sm sm:text-base leading-relaxed max-w-xl">
+          {/* Date */}
+          <p className="mt-4 genesis-fade-up genesis-fade-up-3" style={{fontFamily:'Share Tech Mono, monospace', fontSize:'11px', textTransform:'uppercase', letterSpacing:'0.34em', color:'#f4c46a'}}>
+            {settings.tournamentDate ? new Date(settings.tournamentDate + 'T00:00:00').toLocaleDateString('en-US', {day:'numeric', month:'long', year:'numeric'}) : '6 September 2026'}
+          </p>
+
+          {/* Gold divider */}
+          <span className="genesis-gold-line mt-6 block h-px w-40" style={{background:'linear-gradient(to right, transparent, #e2a743, transparent)'}}></span>
+
+          {/* Countdown */}
+          <div className="mt-8">
+            <CountdownDisplay settings={settings} />
+          </div>
+
+          {/* Info grid */}
+          <div className="genesis-info-grid mt-10 w-full max-w-3xl genesis-fade-up genesis-fade-up-5">
+            <div>
+              <dt className="genesis-info-label">Date</dt>
+              <dd className="genesis-info-value">{settings.tournamentDate ? new Date(settings.tournamentDate + 'T00:00:00').toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'}) : '06 Sep 2026'}</dd>
+            </div>
+            <div>
+              <dt className="genesis-info-label">Hosted by</dt>
+              <dd className="genesis-info-value">{settings.conductedBy || 'DS Tamil Gaming'}</dd>
+            </div>
+            <div>
+              <dt className="genesis-info-label">Entry Fee</dt>
+              <dd className="genesis-info-value">{settings.registrationFee || '₹100'}</dd>
+            </div>
+            <div>
+              <dt className="genesis-info-label">Registration</dt>
+              <dd className="genesis-info-value">
+                <button onClick={() => setActiveTab('register')} className="group inline-flex items-center gap-2 transition-colors" style={{color:'#f4c46a'}}>
+                  {registrationStatus === 'open' ? 'Now Open' : statusText}
+                  <span className="transition-transform duration-300 group-hover:translate-y-0.5" aria-hidden="true">↓</span>
+                </button>
+              </dd>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Scrolling Marquee Ticker */}
+      <div className="genesis-marquee-container relative z-10">
+        <div className="genesis-marquee-track">
+          {[1, 2].map(set => (
+            <div key={set} className="flex items-center shrink-0">
+              {[
+                settings.tournamentName || 'Vortex Clash 2026',
+                settings.tournamentDate ? new Date(settings.tournamentDate + 'T00:00:00').toLocaleDateString('en-US', {day:'numeric', month:'long'}) : '6 September',
+                `${maxCapacity} Teams`,
+                'Single Elimination',
+                settings.conductedBy || 'DS Tamil Gaming',
+                registrationStatus === 'open' ? 'Registration Open' : statusText,
+              ].map((text, i) => (
+                <span key={i} className="flex items-center">
+                  <span className="genesis-marquee-item">{text}</span>
+                  <span className="genesis-marquee-diamond"></span>
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* About + Poster Section */}
+      <section className="relative z-10 px-0 py-16 sm:py-20">
+        <div className="grid items-start gap-12 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:gap-16">
+          {/* Poster */}
+          <div className="order-2 lg:order-1 genesis-fade-up genesis-fade-up-3">
+            <div className="group relative genesis-corners p-2 sm:p-3" style={{border:'1px solid rgba(184,149,106,0.55)', background:'rgba(10,15,24,0.40)'}}>
+              <img
+                src={settings.posterUrl || '/hero-poster.jpg'}
+                alt="VORTEX CLASH Official Poster"
+                className="w-full h-auto transition-transform duration-700 group-hover:scale-[1.02]"
+                style={{borderRadius:'0'}}
+              />
+            </div>
+            <div className="mt-6">
+              <span className="genesis-section-label"><span className="line"></span>Presented by</span>
+              <p className="mt-3 uppercase leading-relaxed" style={{fontFamily:'Poppins, sans-serif', fontSize:'11px', letterSpacing:'0.12em', color:'#71717a'}}>{settings.conductedBy || 'DS Tamil Gaming'}</p>
+            </div>
+          </div>
+
+          {/* Description */}
+          <div className="order-1 lg:order-2">
+            <div className="genesis-fade-up genesis-fade-up-1">
+              <span className="genesis-section-label"><span className="line"></span>About the Tournament</span>
+            </div>
+            <h2 className="mt-6 genesis-fade-up genesis-fade-up-2" style={{fontSize:'clamp(1.6rem, 5vw, 2.75rem)', lineHeight:1.05, fontFamily:'Orbitron, sans-serif', fontWeight:900, textTransform:'uppercase', letterSpacing:'-0.01em', color:'#fff'}}>
+              One arena, <span style={{color:'#e2a743'}}>total domination</span>
+            </h2>
+            <p className="mt-7 max-w-2xl text-base leading-relaxed sm:text-lg sm:leading-[1.8] genesis-fade-up genesis-fade-up-3" style={{color:'#d4d4d8'}}>
               {settings.description}
             </p>
 
             {/* Registration Metric */}
-            <div className="p-4 rounded-lg bg-neutral-950 border border-neutral-800 space-y-2 max-w-md">
+            <div className="mt-8 p-5 max-w-md genesis-fade-up genesis-fade-up-4" style={{borderLeft:'2px solid rgba(226,167,67,0.60)', paddingLeft:'20px'}}>
               <div className="flex justify-between text-xs font-mono">
-                <span className="text-neutral-400">Slots Claimed</span>
-                <span className={isRegistrationFull ? 'text-rose-400' : 'text-supabase'}>
+                <span style={{color:'#71717a'}}>Slots Claimed</span>
+                <span style={{color: isRegistrationFull ? '#f87171' : '#e2a743'}}>
                   {isRegistrationFull ? 'Registration Full' : `${totalRegistered} of ${maxCapacity} Teams`}
                 </span>
               </div>
-              <div className="w-full h-2 bg-neutral-900 rounded-full overflow-hidden">
+              <div className="w-full h-1.5 mt-3 overflow-hidden" style={{background:'rgba(255,255,255,0.06)', borderRadius:'1px'}}>
                 <div
-                  className={`h-full rounded-full transition-all duration-300 ${isRegistrationFull ? 'bg-rose-500' : 'bg-supabase'}`}
-                  style={{ width: `${Math.min(100, (totalRegistered / maxCapacity) * 100)}%` }}
+                  className="h-full transition-all duration-500"
+                  style={{ width: `${Math.min(100, (totalRegistered / maxCapacity) * 100)}%`, background: isRegistrationFull ? '#c2381a' : 'linear-gradient(to right, #e2a743, #fbeecb)', borderRadius:'1px' }}
                 ></div>
               </div>
             </div>
 
             {/* CTAs */}
-            <div className="flex flex-wrap gap-3 pt-2">
+            <div className="mt-11 flex flex-col gap-4 sm:flex-row sm:items-center genesis-fade-up genesis-fade-up-5">
               <button
                 disabled={registrationDisabled || isRegistrationFull}
                 onClick={() => setActiveTab('register')}
-                className={`px-5 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
+                className={`group inline-flex items-center gap-3 px-5 py-3 text-xs font-semibold transition-all duration-300 ${
                   registrationDisabled || isRegistrationFull
-                    ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
-                    : 'btn-primary'
+                    ? 'cursor-not-allowed opacity-40'
+                    : 'hover:bg-supabase hover:text-black'
                 }`}
+                style={{fontFamily:'Share Tech Mono, monospace', fontSize:'11px', textTransform:'uppercase', letterSpacing:'0.24em', border:'1px solid rgba(226,167,67,0.70)', background:'rgba(226,167,67,0.10)', color:'#fbeecb'}}
               >
-                <i data-lucide="user-plus" className="w-4 h-4"></i>
-                <span>
-                  {registrationStatus === 'closed' ? 'REGISTRATION CLOSED' : registrationStatus === 'coming_soon' ? 'REGISTRATION COMING SOON' : 'Register Squad'}
-                </span>
+                {registrationStatus === 'closed' ? 'Registration Closed' : registrationStatus === 'coming_soon' ? 'Coming Soon' : 'Register Squad'}
+                <span className="transition-transform duration-300 group-hover:translate-x-1" aria-hidden="true">→</span>
               </button>
 
               <button
                 onClick={() => setActiveTab('bracket')}
-                className="px-5 py-2.5 rounded-lg text-xs font-semibold btn-secondary flex items-center gap-2"
+                className="group inline-flex items-center gap-3 px-1 py-3 transition-colors"
+                style={{fontFamily:'Share Tech Mono, monospace', fontSize:'11px', textTransform:'uppercase', letterSpacing:'0.24em', color:'#71717a'}}
               >
-                <i data-lucide="git-branch" className="w-4 h-4"></i>
-                <span>View Bracket</span>
+                <span className="transition-transform duration-300 group-hover:-translate-x-1" aria-hidden="true">←</span>
+                View Bracket
               </button>
             </div>
           </div>
-
-          <div className="lg:col-span-5 flex justify-center">
-            <div className="w-full max-w-sm rounded-2xl overflow-hidden border border-neutral-800 bg-neutral-950/90 shadow-2xl group hover:border-emerald-500/40 transition-all duration-300">
-              <div className="relative p-2 bg-gradient-to-b from-neutral-900 to-neutral-950 flex items-center justify-center">
-                <img
-                  src={settings.posterUrl || '/hero-poster.jpg'}
-                  alt="DS VORTEX CLASH Official Poster"
-                  className="w-full h-auto max-h-[380px] object-contain rounded-xl shadow-lg transition-transform duration-300 group-hover:scale-[1.02]"
-                />
-              </div>
-              <div className="p-4 border-t border-neutral-800 flex justify-between items-center text-xs bg-neutral-900/80 backdrop-blur-sm">
-                <span className="text-neutral-400">Entry Fee: <strong className="text-white font-mono text-sm">{settings.registrationFee}</strong></span>
-                <span className="text-neutral-400">Format: <strong className="text-supabase font-mono">Knockout</strong></span>
-              </div>
-            </div>
-          </div>
-
         </div>
       </section>
 
@@ -2895,16 +3019,20 @@ function getChatReply(input, { settings, sponsors, rules }) {
 
 function Footer({ settings, setActiveTab, onOpenAdmin }) {
   return (
-    <footer className="border-t border-neutral-800/80 mt-16 py-8 text-xs text-neutral-500">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row justify-between items-center gap-4">
-        <div>
-          © 2026 <strong>DS TAMIL GAMING</strong> • VORTEX CLASH 2026
+    <footer className="mt-16 py-10 text-xs relative z-10" style={{borderTop:'1px solid rgba(184,149,106,0.35)', background:'rgba(4,8,14,0.78)'}}>
+      <div className="max-w-7xl mx-auto px-5 sm:px-8 flex flex-col sm:flex-row justify-between items-center gap-6">
+        <div style={{fontFamily:'Share Tech Mono, monospace', fontSize:'10px', textTransform:'uppercase', letterSpacing:'0.28em', color:'#71717a'}}>
+          © 2026 <strong style={{color:'#b8956a'}}>DS TAMIL GAMING</strong> · VORTEX CLASH 2026
         </div>
-        <div className="flex gap-4">
-          <button onClick={() => setActiveTab('tournament')} className="hover:text-neutral-300">Tournament</button>
-          <button onClick={() => setActiveTab('bracket')} className="hover:text-neutral-300">Bracket</button>
-          <button onClick={() => setActiveTab('rules')} className="hover:text-neutral-300">Rules</button>
-          <button onClick={onOpenAdmin} className="hover:text-supabase font-mono">Admin</button>
+        <div className="flex gap-6">
+          {[
+            { id: 'tournament', label: 'Tournament' },
+            { id: 'bracket', label: 'Bracket' },
+            { id: 'rules', label: 'Rules' },
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className="genesis-nav-link" style={{fontSize:'10px'}}>{tab.label}</button>
+          ))}
+          <button onClick={onOpenAdmin} className="genesis-nav-link" style={{fontSize:'10px', color:'#e2a743'}}>Admin</button>
         </div>
       </div>
     </footer>

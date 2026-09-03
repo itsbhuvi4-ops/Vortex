@@ -8,10 +8,10 @@
   <!-- Favicon -->
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%233ecf8e'><polygon points='12 2 2 7 12 12 22 7 12 2'/><polygon points='2 17 12 22 22 17 12 12'/><polygon points='2 12 12 17 22 12 12 7'/></svg>" type="image/svg+xml">
 
-  <!-- Clean Inter & JetBrains Mono Fonts -->
+  <!-- Genesis-inspired display, body, and mono typefaces -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Poppins:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -21,27 +21,28 @@
       theme: {
         extend: {
           fontFamily: {
-            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-            mono: ['JetBrains Mono', 'monospace']
+            sans: ['Poppins', 'system-ui', '-apple-system', 'sans-serif'],
+            mono: ['Share Tech Mono', 'monospace'],
+            cyber: ['Orbitron', 'sans-serif'],
           },
           colors: {
             supabase: {
-              DEFAULT: '#3ecf8e',
-              50: '#f0fdf4',
-              100: '#dcfce7',
-              200: '#bbf7d0',
-              300: '#86efac',
-              400: '#4ade80',
-              500: '#3ecf8e',
-              600: '#24b47e',
-              700: '#15803d',
-              800: '#166534',
-              900: '#14532d',
-              dark: '#121212',
-              darker: '#0c0c0c',
-              card: '#181818',
-              surface: '#1e1e1e',
-              border: '#2a2a2a'
+              DEFAULT: '#e2a743',
+              50: '#fdf8ed',
+              100: '#fbeecb',
+              200: '#f4c46a',
+              300: '#e2a743',
+              400: '#d4942e',
+              500: '#e2a743',
+              600: '#b8956a',
+              700: '#8a6d3f',
+              800: '#5c4a2a',
+              900: '#2e2515',
+              dark: '#040a11',
+              darker: '#030710',
+              card: '#0a0f18',
+              surface: '#0d1320',
+              border: 'rgba(244,198,106,0.22)'
             }
           }
         }
@@ -71,7 +72,7 @@
   <!-- Custom Styles -->
   <link rel="stylesheet" href="/css/style.css">
 </head>
-<body class="bg-[#0c0c0c] text-neutral-200 font-sans antialiased selection:bg-supabase selection:text-black min-h-screen">
+<body class="bg-[#040a11] text-neutral-200 font-sans antialiased selection:bg-supabase selection:text-black min-h-screen">
   <div id="root"></div>
 
   <!-- Main Application Script -->
