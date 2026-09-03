@@ -209,10 +209,14 @@ function App() {
     {
       id: 1,
       type: 'bot',
-      text: 'Hi! I can guide you through registration, rules, sponsors, payment, and tournament updates.'
+      text: 'Hey! 👋 Welcome to Vortex Guide.\n\nI can help you with tournament rules, registration, team status, brackets, match schedules and more.\n\nWhat do you need?'
     }
   ]);
   const [chatInput, setChatInput] = useState('');
+  const [chatTyping, setChatTyping] = useState(false);
+  const [awaitingTeamLookup, setAwaitingTeamLookup] = useState(false);
+  const chatEndRef = useRef(null);
+  const teamNoticeSnapshot = useRef(null);
 
   const showToast = (msg, type = 'info') => {
     setToastMessage({ text: msg, type });
@@ -381,16 +385,68 @@ function App() {
   const isRegistrationFull = totalRegistered >= maxCapacity || !isRegistrationOpen;
   const hasExistingRegistration = !!myTeam;
 
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [chatMessages, chatTyping]);
+
+  // Team notices are generated only when live tournament data changes after it has loaded.
+  // They stay inside Vortex Guide; no fictional or external notification is sent.
+  useEffect(() => {
+    if (!myTeam) return;
+    const snapshot = JSON.stringify({ bracket: bracketData?.bracket?.matches, team: myTeam.status });
+    if (teamNoticeSnapshot.current === null) {
+      teamNoticeSnapshot.current = snapshot;
+      return;
+    }
+    if (teamNoticeSnapshot.current === snapshot) return;
+    teamNoticeSnapshot.current = snapshot;
+    const notice = getTeamNotification(myTeam, bracketData);
+    if (notice) setChatMessages(prev => [...prev, { id: Date.now(), type: 'bot', text: notice, notification: true }]);
+  }, [myTeam, bracketData]);
+
+  const addGuideReply = (reply) => {
+    setChatTyping(true);
+    window.setTimeout(() => {
+      setChatMessages(prev => [...prev, { id: Date.now(), type: 'bot', text: reply }]);
+      setChatTyping(false);
+    }, 380);
+  };
+
+  const handleGuideAction = (action) => {
+    if (action === 'register') setActiveTab('register');
+    if (action === 'bracket') setActiveTab('bracket');
+    if (action === 'schedule') setActiveTab('bracket');
+    if (action === 'status') {
+      setAwaitingTeamLookup(true);
+      addGuideReply('Enter your Team ID or Team Name 👇');
+      return;
+    }
+    addGuideReply(getGuideActionReply(action, { settings: currentSettings, teams, rules, bracketData, myTeam }));
+  };
+
   const handleChatSubmit = (e) => {
     e.preventDefault();
     const trimmed = chatInput.trim();
     if (!trimmed) return;
 
     const userMessage = { id: Date.now(), type: 'user', text: trimmed };
-    const reply = getChatReply(trimmed, { settings: currentSettings, sponsors, rules });
-
-    setChatMessages(prev => [...prev, userMessage, { id: Date.now() + 1, type: 'bot', text: reply }]);
+    setChatMessages(prev => [...prev, userMessage]);
     setChatInput('');
+    // Bhuvi is a global trigger, including while the guide is waiting for a Team ID.
+    if (normaliseGuideText(trimmed).includes('bhuvi')) {
+      setAwaitingTeamLookup(false);
+      addGuideReply(getChatReply(trimmed, { settings: currentSettings, teams, sponsors, rules, bracketData, myTeam }));
+      return;
+    }
+    if (awaitingTeamLookup) {
+      setAwaitingTeamLookup(false);
+      addGuideReply(getTeamLookupReply(trimmed, teams, bracketData, currentSettings));
+      return;
+    }
+    if (/(team status|check team|team id)/.test(normaliseGuideText(trimmed))) {
+      setAwaitingTeamLookup(true);
+    }
+    addGuideReply(getChatReply(trimmed, { settings: currentSettings, teams, sponsors, rules, bracketData, myTeam }));
   };
 
   // Only show loading screen during initial loading phase; never permanently blocked
@@ -653,7 +709,7 @@ function App() {
             style={{background:'#e2a743', color:'#11151c'}}
           >
             <i data-lucide="message-circle" className="w-4 h-4"></i>
-            Ask Vortex Bot
+            Vortex Guide
           </button>
         ) : (
           <div className="w-[340px] max-w-[90vw] overflow-hidden shadow-2xl backdrop-blur-md" style={{borderRadius:'2px', border:'1px solid rgba(244,198,106,0.30)', background:'rgba(4,10,17,0.97)'}}>
@@ -669,24 +725,32 @@ function App() {
               </button>
             </div>
 
-            <div className="max-h-72 overflow-y-auto px-3 py-3 space-y-3" style={{background:'#060c14'}}>
+            <div className="max-h-80 overflow-y-auto px-3 py-3 space-y-3" style={{background:'#060c14'}} aria-live="polite">
               {chatMessages.map(msg => (
                 <div key={msg.id} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] px-3 py-2 text-xs leading-relaxed ${msg.type === 'user' ? 'text-black' : 'text-neutral-100'}`}
+                  <div className={`vortex-guide-message max-w-[88%] px-3 py-2 text-xs leading-relaxed whitespace-pre-line ${msg.type === 'user' ? 'text-black' : 'text-neutral-100'} ${msg.notification ? 'vortex-guide-notice' : ''}`}
                     style={msg.type === 'user' ? {background:'#e2a743', borderRadius:'2px'} : {background:'rgba(10,15,24,0.86)', border:'1px solid rgba(244,198,106,0.20)', borderRadius:'2px'}}
                   >
                     {msg.text}
                   </div>
                 </div>
               ))}
+              {chatTyping && (
+                <div className="flex justify-start"><div className="vortex-guide-typing"><span></span><span></span><span></span></div></div>
+              )}
+              <div ref={chatEndRef}></div>
             </div>
 
             <div className="p-2.5" style={{borderTop:'1px solid rgba(244,198,106,0.20)', background:'rgba(10,15,24,0.90)'}}>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {['Rules', 'Sponsors', 'Register', 'Payment'].map(label => (
+              <div className="flex flex-wrap gap-1.5 mb-2" aria-label="Vortex Guide quick actions">
+                {[
+                  ['rules', '📋 Rules'], ['info', '🏆 Tournament Info'], ['register', '📝 Register Team'],
+                  ['status', '📊 Check Team Status'], ['bracket', '🥇 Bracket'], ['schedule', '⏱️ Match Schedule'],
+                  ['faq', '❓ FAQ'], ['myTournament', '🎯 My Tournament'], ['contact', '📞 Contact Admin']
+                ].map(([action, label]) => (
                   <button
-                    key={label}
-                    onClick={() => setChatInput(label)}
+                    key={action}
+                    onClick={() => handleGuideAction(action)}
                     className="px-2 py-1 text-[10px] text-neutral-200"
                     style={{border:'1px solid rgba(244,198,106,0.20)', background:'rgba(226,167,67,0.06)', borderRadius:'2px'}}
                   >
@@ -698,7 +762,7 @@ function App() {
                 <input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  placeholder="Ask about rules, fees, or sponsors..."
+                  placeholder={awaitingTeamLookup ? 'Team ID or team name...' : 'Ask Vortex Guide...'}
                   className="flex-1 px-2.5 py-2 text-xs text-white placeholder:text-neutral-500 outline-none"
                   style={{background:'rgba(3,7,13,0.72)', border:'1px solid rgba(244,198,106,0.20)', borderRadius:'2px'}}
                 />
@@ -2071,6 +2135,7 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
   const [settingsForm, setSettingsForm] = useState(settings);
   const [paymentQrFile, setPaymentQrFile] = useState(null);
   const [paymentQrPreview, setPaymentQrPreview] = useState(settings.paymentQrUrl || '');
+  const [matchDrafts, setMatchDrafts] = useState({});
   const [sponsorForm, setSponsorForm] = useState({
     name: '',
     role: '',
@@ -2123,6 +2188,23 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
       showToast(data.message, "success");
       fetchData();
     }
+  };
+
+  const updateMatchDraft = (match, changes) => {
+    setMatchDrafts(prev => ({ ...prev, [match.id]: { scheduledTime: match.scheduledTime || '', status: match.status || 'UPCOMING', ...prev[match.id], ...changes } }));
+  };
+
+  const handleSaveMatchSchedule = async (match) => {
+    const draft = matchDrafts[match.id] || { scheduledTime: match.scheduledTime, status: match.status };
+    const res = await fetch('/api/bracket/match/update', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ matchId: match.id, scheduledTime: draft.scheduledTime || null, status: draft.status })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast('Match schedule updated', 'success');
+      fetchData();
+    } else showToast(data.error || 'Unable to update match schedule.', 'error');
   };
 
   const handleSetWinner = async (matchId, winnerId) => {
@@ -2470,6 +2552,25 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
                       )}
                     </div>
                   </div>
+                  <div className="grid grid-cols-[1fr_auto] gap-2 pt-1 border-t border-neutral-800">
+                    <input
+                      type="datetime-local"
+                      aria-label={`Schedule for match ${m.matchNumber}`}
+                      value={matchDrafts[m.id]?.scheduledTime !== undefined ? matchDrafts[m.id].scheduledTime : toDateTimeLocalValue(m.scheduledTime)}
+                      onChange={(e) => updateMatchDraft(m, { scheduledTime: e.target.value ? new Date(e.target.value).toISOString() : '' })}
+                      className="min-w-0 p-1.5 input-supabase text-[10px]"
+                    />
+                    <select
+                      value={matchDrafts[m.id]?.status || m.status || 'UPCOMING'}
+                      onChange={(e) => updateMatchDraft(m, { status: e.target.value })}
+                      className="p-1.5 input-supabase text-[10px]"
+                    >
+                      <option value="UPCOMING">Upcoming</option>
+                      <option value="LIVE">Live</option>
+                      <option value="COMPLETED">Completed</option>
+                    </select>
+                  </div>
+                  <button onClick={() => handleSaveMatchSchedule(m)} className="w-full py-1.5 btn-secondary text-[10px]">Save match schedule</button>
                 </div>
               );
             })}
@@ -2768,6 +2869,20 @@ function AdminPanel({ settings, teams, sponsors, rules, bracketData, showToast, 
             </div>
           </div>
           <div>
+            <label className="text-neutral-400 block mb-1">Tournament Timezone</label>
+            <select
+              value={settingsForm.tournamentTimezone || ''}
+              onChange={(e) => setSettingsForm({ ...settingsForm, tournamentTimezone: e.target.value })}
+              className="w-full p-2 input-supabase text-xs"
+            >
+              <option value="">Viewer local time (not configured)</option>
+              <option value="Asia/Kolkata">India Standard Time (Asia/Kolkata)</option>
+              <option value="UTC">UTC</option>
+              <option value="Asia/Dhaka">Bangladesh Standard Time (Asia/Dhaka)</option>
+              <option value="Asia/Karachi">Pakistan Standard Time (Asia/Karachi)</option>
+            </select>
+          </div>
+          <div>
             <label className="text-neutral-400 block mb-2">Registration Status</label>
             <select
               value={settingsForm.registrationStatus || normalizeRegistrationStatus(settingsForm)}
@@ -2965,56 +3080,124 @@ function AdminLoginModal({ onClose, onSuccess, showToast }) {
 // =========================================================================
 // FOOTER
 // =========================================================================
-function getChatReply(input, { settings, sponsors, rules }) {
-  const text = input.toLowerCase();
+function normaliseGuideText(value = '') {
+  return String(value).normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
 
-  if (!settings) {
-    return 'The tournament details are still loading. Please try again in a moment.';
+function formatTournamentTime(value, settings = {}) {
+  if (!value || Number.isNaN(new Date(value).getTime())) return 'Not scheduled yet';
+  const timezone = settings.tournamentTimezone || settings.timezone || settings.timeZone;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium', timeStyle: 'short', ...(timezone ? { timeZone: timezone } : {})
+  }).format(new Date(value));
+}
+
+function toDateTimeLocalValue(value) {
+  if (!value || Number.isNaN(new Date(value).getTime())) return '';
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+function getTeamTournamentState(team, bracketData) {
+  const id = team?.registrationId || team?.registrationNumber;
+  const matches = bracketData?.bracket?.matches || [];
+  const teamMatches = matches.filter(match => match.team1Id === id || match.team2Id === id);
+  const upcoming = teamMatches.find(match => match.status !== 'COMPLETED' && !match.winnerId);
+  const completed = teamMatches.filter(match => match.status === 'COMPLETED' || match.winnerId);
+  const latest = completed.sort((a, b) => new Date(b.scheduledTime || 0) - new Date(a.scheduledTime || 0))[0];
+  const wonLatest = latest?.winnerId === id;
+  const champion = bracketData?.bracket?.championTeamId === id;
+  const stage = champion ? 'Champion' : upcoming?.roundName || (latest ? (wonLatest ? 'Qualified for next stage' : 'Eliminated') : 'Not assigned yet');
+  return { id, teamMatches, upcoming, latest, wonLatest, champion, stage };
+}
+
+function getPaymentStatus(team) {
+  if (team?.paymentStatus) return team.paymentStatus;
+  if (team?.paymentProof) return 'Proof submitted — verification unavailable';
+  return 'Not available';
+}
+
+function getTeamStatusCard(team, bracketData, settings = {}) {
+  const state = getTeamTournamentState(team, bracketData);
+  const next = state.upcoming;
+  const matchLabel = next ? `#${next.matchNumber} · ${next.roundName}` : 'Not scheduled yet';
+  return `┌─────────────────────────┐\nTEAM STATUS\n└─────────────────────────┘\n\n👥 Team: ${team.teamName}\n🟢 Registration: ${team.status || 'Registered'}\n💳 Payment: ${getPaymentStatus(team)}\n🎯 Slot: Not assigned\n🏆 Stage: ${state.stage}\n📊 Points: Not available\n📈 Rank: Not available\n🎮 Next Match: ${matchLabel}\n⏱️ Time: ${formatTournamentTime(next?.scheduledTime, settings)}`;
+}
+
+function getTeamLookupReply(query, teams, bracketData, settings = {}) {
+  const lookup = normaliseGuideText(query);
+  const team = (teams || []).find(item => normaliseGuideText(item.registrationId || item.registrationNumber) === lookup || normaliseGuideText(item.teamName) === lookup);
+  return team ? getTeamStatusCard(team, bracketData, settings) : '❌ Team not found.\n\nPlease check your Team ID or Team Name and try again.';
+}
+
+function getBracketSummary(bracketData, settings = {}) {
+  const bracket = bracketData?.bracket;
+  if (!bracket || bracket.status !== 'PUBLISHED') return '🥇 BRACKET\n\nThe bracket has not been published yet. Check back after the admin publishes it.';
+  const matches = bracket.matches || [];
+  const current = matches.filter(m => m.status !== 'COMPLETED').sort((a, b) => new Date(a.scheduledTime || 0) - new Date(b.scheduledTime || 0))[0];
+  const champion = bracket.championTeamId ? bracketData.teamMap?.[bracket.championTeamId]?.teamName : null;
+  return `🥇 LIVE BRACKET\n\nQUALIFIERS\n↓\nKNOCKOUT\n↓\nQUARTER FINALS\n↓\nSEMI FINALS\n↓\nGRAND FINAL\n\nCurrent stage: ${current?.roundName || (champion ? 'Completed' : 'Awaiting results')}\n${current ? `Next: Match #${current.matchNumber} · ${current.roundName}\nTime: ${formatTournamentTime(current.scheduledTime, settings)}` : ''}${champion ? `\n🏆 Champion: ${champion}` : ''}\n\nOpen the Bracket page to view every matchup and qualified team.`;
+}
+
+function getScheduleReply(bracketData, settings = {}) {
+  const matches = (bracketData?.bracket?.matches || []).filter(m => m.status !== 'COMPLETED' && m.scheduledTime).sort((a, b) => new Date(a.scheduledTime) - new Date(b.scheduledTime));
+  const match = matches[0];
+  if (!match) return '⏱️ MATCH SCHEDULE\n\nNo upcoming match schedule is available yet.';
+  const remaining = calculateTimeLeft(match.scheduledTime);
+  const state = match.status === 'LIVE' || remaining.total <= 0 ? '🔴 MATCH LIVE' : '🟡 UPCOMING';
+  return `${state}\n\n🔴 MATCH STARTING IN\n${String(remaining.hours + remaining.days * 24).padStart(2, '0')} : ${String(remaining.minutes).padStart(2, '0')} : ${String(remaining.seconds).padStart(2, '0')}\n\n🎮 Match: #${match.matchNumber} · ${match.roundName}\n⏱️ Time: ${formatTournamentTime(match.scheduledTime, settings)}`;
+}
+
+function getTeamNotification(team, bracketData) {
+  const state = getTeamTournamentState(team, bracketData);
+  if (state.champion) return `🏆 YOUR TEAM QUALIFIED!\n\nCongratulations!\n\n${team.teamName} is the tournament champion. 🔥`;
+  if (state.upcoming && state.wonLatest) return `🔥 YOU QUALIFIED!\n\n${team.teamName} has advanced to ${state.upcoming.roundName}.\n\n🎮 Match: #${state.upcoming.matchNumber}\n⏱️ Time: ${formatTournamentTime(state.upcoming.scheduledTime)}\n\nKeep pushing towards the Grand Final! 🏆`;
+  if (state.latest) return `📊 MATCH RESULT\n\nTeam: ${team.teamName}\n🎮 Match: #${state.latest.matchNumber}\n🏆 Result: ${state.wonLatest ? 'Won' : 'Lost'}\n⭐ Points: Not available\n📈 Current Rank: Not available`;
+  if (state.upcoming) return `⏰ MATCH REMINDER\n\nYour team ${team.teamName} has an upcoming match.\n\n🎮 Match: #${state.upcoming.matchNumber}\n⏱️ Time: ${formatTournamentTime(state.upcoming.scheduledTime)}\n\nBe ready and join on time!`;
+  return null;
+}
+
+function getGuideActionReply(action, { settings, teams, rules, bracketData, myTeam }) {
+  if (action === 'rules' || action === 'faq') {
+    if (!rules?.length) return '❓ FAQ\n\nTournament rules are not currently available.';
+    return `📋 RULES\n\n${rules.slice(0, 4).map((rule, index) => `${index + 1}. ${rule.title}`).join('\n')}\n\nOpen the Rules page for the complete rulebook.`;
   }
-
-  if (text.includes('register') || text.includes('signup') || text.includes('join')) {
-    return `Registration is ${settings.registrationOpen ? 'open' : 'currently closed'}. We have ${settings.maxTeams} total team slots and the entry fee is ${settings.registrationFee}.`;
+  if (action === 'info') return `🏆 TOURNAMENT INFO\n\nName: ${settings.tournamentName || 'Not available'}\nFormat: ${(rules || []).find(rule => /format/i.test(rule.title))?.content || 'Not currently available'}\nEntry fee: ${settings.registrationFee || 'Not currently available'}\nRegistration: ${settings.registrationOpen ? 'Open' : 'Closed'}\nTeams: ${(teams || []).length}/${settings.maxTeams || 'Not available'}\nStart: ${settings.tournamentDate && settings.tournamentStartTime ? `${settings.tournamentDate} ${settings.tournamentStartTime}` : 'Not available'}`;
+  if (action === 'register') return settings.registrationOpen ? '📝 REGISTER TEAM\n\nOpening the registration form now. Complete your squad details to register.' : '📝 REGISTER TEAM\n\nRegistration is currently closed.';
+  if (action === 'bracket') return getBracketSummary(bracketData, settings);
+  if (action === 'schedule') return getScheduleReply(bracketData, settings);
+  if (action === 'myTournament') {
+    if (!myTeam) return '❌ No registered team found.\n\nPlease register your team first.';
+    const state = getTeamTournamentState(myTeam, bracketData);
+    return `🎯 MY TOURNAMENT\n\n👥 Team: ${myTeam.teamName}\n💳 Payment: ${getPaymentStatus(myTeam)}\n🏆 Stage: ${state.stage}\n📊 Points: Not available\n📈 Rank: Not available\n🎮 Next Match: ${state.upcoming ? `#${state.upcoming.matchNumber}` : 'Not scheduled yet'}\n⏱️ Match Time: ${formatTournamentTime(state.upcoming?.scheduledTime, settings)}\n🥇 Bracket Position: ${state.upcoming ? `${state.upcoming.roundName} · Match #${state.upcoming.matchNumber}` : 'Not assigned yet'}`;
   }
-
-  if (text.includes('payment') || text.includes('fee') || text.includes('qr')) {
-    return `The registration fee is ${settings.registrationFee}. ${settings.paymentInstructions}`;
+  if (action === 'contact') {
+    const contacts = [settings.whatsappLink && `WhatsApp: ${settings.whatsappLink}`, settings.discordLink && `Discord: ${settings.discordLink}`].filter(Boolean);
+    return contacts.length ? `📞 CONTACT ADMIN\n\n${contacts.join('\n')}` : '📞 CONTACT ADMIN\n\nOfficial admin contact information is not currently available.';
   }
+  return 'I’m not sure about that yet. 😅\n\nTry asking about:\n\n📋 Rules\n📝 Registration\n📊 Team Status\n🥇 Bracket\n⏱️ Match Schedule\n🏆 Tournament Info\n\nOr choose an option below.';
+}
 
-  if (text.includes('sponsor') || text.includes('partners')) {
-    if (!sponsors || sponsors.length === 0) {
-      return 'There are no sponsors listed yet.';
-    }
-    return `Our sponsors include ${sponsors.slice(0, 3).map(s => s.name).join(', ')}. You can also view the full list from the Sponsors page.`;
+function getChatReply(input, { settings, teams, sponsors, rules, bracketData, myTeam }) {
+  const text = normaliseGuideText(input);
+  if (text.includes('bhuvi')) return '👑 BHUVI\n\nThis website was created by Bhuvi, Founder of RDX ESPORTS. ⚡\n\n👑 Founder: Bhuvi\n💻 Website Creator: Bhuvi\n🛡️ Organization: RDX ESPORTS\n\nBuilt with passion for competitive esports. 🔥';
+  if (!settings) return 'The tournament details are still loading. Please try again in a moment.';
+  if (/^(hi|hello|hey)\b/.test(text)) return 'Hey! 👋 Welcome to Vortex Guide.\n\nI can help you with tournament rules, registration, team status, brackets, match schedules and more.\n\nWhat do you need?';
+  if (text.includes('my tournament') || text.includes('my team')) return getGuideActionReply('myTournament', { settings, teams, rules, bracketData, myTeam });
+  if (text.includes('team status') || text.includes('check team') || text.includes('team id')) return 'Enter your Team ID or Team Name 👇';
+  if (text.includes('bracket') || text.includes('qualified') || text.includes('winner')) return getBracketSummary(bracketData, settings);
+  if (text.includes('match') || text.includes('schedule') || text.includes('grand final') || text.includes('when')) return getScheduleReply(bracketData, settings);
+  if (text.includes('register') || text.includes('signup') || text.includes('join')) return getGuideActionReply('register', { settings, teams, rules, bracketData, myTeam });
+  if (text.includes('player')) {
+    const roster = (rules || []).find(rule => /roster|player|eligibility/i.test(`${rule.title} ${rule.content}`));
+    return roster?.content || 'Player limits are not currently available.';
   }
-
-  if (text.includes('rule') || text.includes('guideline')) {
-    if (!rules || rules.length === 0) {
-      return 'No rules are available right now.';
-    }
-    return `Key rules include: ${rules.slice(0, 3).map(rule => rule.title).join(', ')}. Please review all rules before registering.`;
-  }
-
-  if (text.includes('whatsapp') || text.includes('community')) {
-    return `Join the official WhatsApp community here: ${settings.whatsappLink}`;
-  }
-
-  if (text.includes('discord')) {
-    return `Join the official Discord server here: ${settings.discordLink}`;
-  }
-
-  if (text.includes('bracket') || text.includes('match') || text.includes('schedule')) {
-    return 'The match bracket and schedule are available from the Bracket section. Admins will publish updates when matches are ready.';
-  }
-
-  if (text.includes('hello') || text.includes('hi') || text.includes('hey')) {
-    return 'Hello! I can help with registration, payment, rules, sponsors, and tournament updates.';
-  }
-
-  if (text.includes('thank')) {
-    return 'You are welcome! Let me know if you need any tournament help.';
-  }
-
-  return 'I can help with registration, payment, rules, sponsors, bracket info, and community links. Try asking about rules, sponsors, or registration.';
+  if (text.includes('rule') || text.includes('format')) return getGuideActionReply('rules', { settings, teams, rules, bracketData, myTeam });
+  if (text.includes('fee') || text.includes('payment') || text.includes('tournament info')) return getGuideActionReply('info', { settings, teams, rules, bracketData, myTeam });
+  if (text.includes('contact') || text.includes('admin') || text.includes('whatsapp') || text.includes('discord')) return getGuideActionReply('contact', { settings, teams, rules, bracketData, myTeam });
+  if (text.includes('sponsor') || text.includes('partner')) return sponsors?.length ? `Our sponsors include ${sponsors.slice(0, 3).map(s => s.name).join(', ')}.` : 'There are no sponsors listed yet.';
+  if (text.includes('thank')) return 'You are welcome! Let me know if you need any tournament help.';
+  return getGuideActionReply('unknown', { settings, teams, rules, bracketData, myTeam });
 }
 
 function Footer({ settings, setActiveTab, onOpenAdmin }) {

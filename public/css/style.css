@@ -615,6 +615,30 @@ footer {
 .text-rose-300 { color: #f87171 !important; }
 .bg-rose-500 { background-color: var(--genesis-mars) !important; }
 
+/* Vortex Guide: restrained message entrance and typing feedback */
+.vortex-guide-message { animation: vortex-guide-in 180ms ease-out both; }
+.vortex-guide-notice { border-left: 2px solid var(--genesis-gold) !important; }
+.vortex-guide-typing {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 42px;
+  padding: 10px 12px;
+  border: 1px solid rgba(244,198,106,0.20);
+  background: rgba(10,15,24,0.86);
+}
+.vortex-guide-typing span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--genesis-gold);
+  animation: vortex-guide-dot 900ms infinite ease-in-out;
+}
+.vortex-guide-typing span:nth-child(2) { animation-delay: 120ms; }
+.vortex-guide-typing span:nth-child(3) { animation-delay: 240ms; }
+@keyframes vortex-guide-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes vortex-guide-dot { 0%, 60%, 100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-3px); opacity: 1; } }
+
 /* focus overrides for inputs everywhere */
 .focus\:border-supabase:focus,
 input:focus, select:focus, textarea:focus {
